@@ -1,0 +1,100 @@
+# LiteLLM Local Proxy Stack
+# All ports bound to 127.0.0.1 — nothing reachable from outside this machine.
+
+services:
+
+  # ── PostgreSQL — LiteLLM's backend database ─────────────────────────────
+  # Internal only — no host port exposed.
+  postgres:
+    image: postgres:16-alpine
+    container_name: litellm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - litellm-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── LiteLLM Proxy ────────────────────────────────────────────────────────
+  # UI at http://localhost:4000/ui  (login with your LITELLM_MASTER_KEY)
+  # API at http://localhost:4000/v1
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.83.0-nightly@sha256:3a8f981557838dea1340d318ba22225bfc2f2e86e4b415d6b1bc9cbe8dd26b72
+    container_name: litellm
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://litellm:${POSTGRES_PASSWORD}@postgres:5432/litellm"
+      LITELLM_TELEMETRY: "False"
+      DISABLE_TELEMETRY_REPORTING: "True"
+      LITELLM_LOG: "ERROR"
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: "2"
+    networks:
+      - litellm-net
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:4000/health/liveliness\", timeout=5)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── CLIProxyAPI — OAuth bridge for Gemini + Claude ──────────────────────
+  # Web UI at http://localhost:8317   (manage accounts, view status)
+  # API at http://cli-proxy-api:8317  (internal Docker DNS, LiteLLM calls this)
+  #
+  # OAuth callback ports (needed during login AND for token refresh):
+  #   8085  → Gemini
+  #   54545 → Claude
+  cli-proxy-api:
+    image: eceasy/cli-proxy-api:latest@sha256:24211fc337fc1aad83243de8ce3079ffb5dad5c9161446b4acf20454f12fa534
+    container_name: cli-proxy-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8317:8317"    # Web UI + API — localhost only
+      - "127.0.0.1:8085:8085"    # Gemini OAuth callback
+      - "127.0.0.1:54545:54545"  # Claude OAuth callback
+    volumes:
+      - ./cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml:ro
+      - cliproxyapi-auths:/root/.cli-proxy-api
+      - cliproxyapi-logs:/CLIProxyAPI/logs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "1"
+    networks:
+      - litellm-net
+
+networks:
+  litellm-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  cliproxyapi-auths:
+  cliproxyapi-logs:

@@ -1,0 +1,157 @@
+# LiteLLM Proxy Configuration
+# Backends: GitHub Copilot Enterprise, Anthropic, LM Studio, Gemini (pending)
+#
+# Key security properties:
+#   - success_callback / failure_callback both empty → no prompt/response exfiltration
+#   - telemetry: false → no usage data sent to LiteLLM servers
+#   - disable_spend_logs: true → no SQLite write pressure; DB stays ephemeral in /tmp
+
+# ── MODEL ROUTING ───────────────────────────────────────────────────────────
+model_list:
+
+  # ── GitHub Copilot Enterprise / GitHub Models API ──────────────────────
+  # Requires GITHUB_API_KEY in .env (GitHub PAT with models:read scope,
+  # or a Copilot Enterprise token — check your org's token guidance).
+  # Full model list: https://github.com/marketplace/models
+  #
+  # Usage: POST http://localhost:4000/v1/chat/completions
+  #        "model": "github/gpt-4o"
+
+  - model_name: github/gpt-4o
+    litellm_params:
+      model: github/gpt-4o
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/gpt-4o-mini
+    litellm_params:
+      model: github/gpt-4o-mini
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/o1
+    litellm_params:
+      model: github/o1
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/o3-mini
+    litellm_params:
+      model: github/o3-mini
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/claude-3.5-sonnet
+    litellm_params:
+      model: github/Claude-3.5-Sonnet
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/claude-3.7-sonnet
+    litellm_params:
+      model: github/Claude-3.7-Sonnet
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/llama-3.3-70b
+    litellm_params:
+      model: github/Llama-3.3-70B-Instruct
+      api_key: os.environ/GITHUB_API_KEY
+
+  - model_name: github/mistral-large
+    litellm_params:
+      model: github/Mistral-Large-2411
+      api_key: os.environ/GITHUB_API_KEY
+
+  # ── Anthropic Claude (via CLIProxyAPI — OAuth, no API key needed) ──────
+  # Uses your Claude account OAuth session from `--claude-login`.
+  # CLIProxyAPI is OpenAI-compatible; model names match what Claude Code exposes.
+  #
+  # Usage: "model": "claude-opus" / "claude-sonnet" / "claude-haiku"
+
+  - model_name: claude-opus
+    litellm_params:
+      model: openai/claude-opus-4-5
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: openai/claude-sonnet-4-5
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: openai/claude-haiku-4-5
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+  # ── LM Studio (local, OpenAI-compatible, JIT wildcard) ─────────────────
+  # LM Studio runs at http://127.0.0.1:1234 on your Mac.
+  # Inside Docker, your Mac is reachable via host.docker.internal.
+  #
+  # Wildcard routing: any model_name starting with "lm-studio/" is stripped
+  # of the prefix and forwarded verbatim to LM Studio. LM Studio JIT-loads
+  # whatever model name it receives — no config change needed when you swap models.
+  #
+  # Usage: "model": "lm-studio/<exact-model-id-from-lmstudio-ui>"
+  # Example: "model": "lm-studio/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"
+  #
+  # To see what IDs LM Studio knows about, check the model name shown in
+  # LM Studio's UI or call: curl http://localhost:1234/v1/models
+  #
+  # LM Studio's API key field is unused; any non-empty string works.
+
+  - model_name: "lm-studio/*"
+    litellm_params:
+      model: "openai/*"             # wildcard maps lm-studio/<x> → openai/<x> → LM Studio
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  # ── Google Gemini (via CLIProxyAPI — no API key needed) ────────────────
+  # Routed through CLIProxyAPI which holds your OAuth session from `gemini --login`.
+  # CLIProxyAPI is OpenAI-compatible; we use the openai/ prefix with a custom api_base.
+  # "cli-proxy-api" resolves via Docker DNS — this port is never exposed to your Mac.
+  #
+  # When your org adds direct Gemini API access later, swap these to:
+  #   model: gemini/gemini-2.0-flash  +  api_key: os.environ/GEMINI_API_KEY
+  # and remove the api_base lines.
+  #
+  # Usage: "model": "gemini-flash" or "gemini-pro"
+
+  - model_name: gemini-flash
+    litellm_params:
+      model: openai/gemini-2.0-flash
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"          # CLIProxyAPI has no key enforcement by default
+
+  - model_name: gemini-pro
+    litellm_params:
+      model: openai/gemini-1.5-pro
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+# ── GENERAL SETTINGS ────────────────────────────────────────────────────────
+general_settings:
+  # Master key: every request to this proxy must include
+  #   Authorization: Bearer <LITELLM_MASTER_KEY>
+  # Set a strong random value in .env. Generate one:
+  #   openssl rand -hex 32
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+  # Disable spend/usage logging to keep the ephemeral SQLite DB empty
+  disable_spend_logs: true
+
+  # CRITICAL: empty callback arrays prevent any prompt/response data from
+  # being forwarded to external services (Langfuse, Prometheus, webhooks, etc.)
+  success_callback: []
+  failure_callback: []
+
+# ── LITELLM LIBRARY SETTINGS ────────────────────────────────────────────────
+litellm_settings:
+  # Belt-and-suspenders alongside the env var — telemetry disabled here too
+  telemetry: false
+
+  # Do not log verbose request/response details even internally
+  set_verbose: false
+
+  # Drop unsupported params silently instead of erroring
+  drop_params: true
+
+  # Request timeout in seconds (adjust per your slowest backend)
+  request_timeout: 120

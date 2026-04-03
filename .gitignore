@@ -1,0 +1,10 @@
+# secrets — never commit
+.env
+
+# CLIProxyAPI credential store — contains live OAuth tokens
+cliproxyapi/auths/
+
+# ephemeral artifacts
+*.db
+*.log
+*.pid
