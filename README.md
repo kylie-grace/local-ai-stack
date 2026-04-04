@@ -491,23 +491,39 @@ LiteLLM logs every request to Postgres with token counts (prompt, completion, ca
 
 ### OpenUsage compatibility
 
-[openusage](https://github.com/robinebers/openusage) is a macOS menu bar app that tracks usage across AI providers. Its Claude plugin reads `~/.claude/.credentials.json` (or the macOS keychain under `"Claude Code-credentials"`) to obtain an Anthropic OAuth token and calls `https://api.anthropic.com/api/oauth/usage`.
+[openusage](https://github.com/robinebers/openusage) is a macOS menu bar app that tracks usage across AI providers. Its Claude plugin reads `~/.claude/.credentials.json` for the OAuth token, which conflicts with the LiteLLM proxy (Claude Code also reads that file on startup and uses it to bypass the proxy).
 
-**The constraint:** Claude Code CLI also reads `~/.claude/.credentials.json` on startup. If that file exists, Claude Code uses the OAuth session directly — bypassing the LiteLLM proxy. This is why `/logout` is required for the proxy to work. Writing the CLIProxyAPI OAuth token back to `.credentials.json` for openusage would break the proxy on the next Claude Code start.
+**Solution:** A [patched fork](https://github.com/kylie-grace/openusage) reads from `~/.local-ai/anthropic-token.json` instead, with the macOS keychain fallback disabled. A `launchd` agent (`com.local-ai.sync-anthropic-token`) syncs the token from the CLIProxyAPI Docker container to that path every 15 minutes — no conflict with Claude Code, no manual steps.
 
-**Current workaround:** `scripts/sync-openusage-token.sh` can temporarily write the CLIProxyAPI token to `.credentials.json` for a manual usage check, then remove it. Run `--cleanup` immediately after checking:
+**Setup (one-time after building the fork):**
+
 ```bash
-./scripts/sync-openusage-token.sh           # write credentials
-# → check openusage
-./scripts/sync-openusage-token.sh --cleanup  # remove credentials
-```
-⚠️ Do not start a new Claude Code terminal session while `.credentials.json` exists.
+# 1. Build the patched fork (requires bun + Rust)
+cd ~/dev\ env/openusage
+source ~/.cargo/env && export PATH="$HOME/.bun/bin:$PATH"
+bun install && bun run bundle:plugins
+bun run tauri build
 
-**Planned long-term fix:** Fork the openusage Claude plugin (`plugins/claude/plugin.js`) to read from a custom path (e.g. `~/.local-ai/anthropic-token.json`) instead of `~/.claude/.credentials.json`. A `launchd` agent keeps that custom path fresh from the Docker volume on a schedule. This eliminates the conflict entirely. See [Future goals](#future-goals) below.
+# 2. Install the built app
+cp -r src-tauri/target/release/bundle/macos/OpenUsage.app /Applications/
+
+# 3. The launchd agent is already loaded (com.local-ai.sync-anthropic-token)
+# Verify it's working:
+cat /tmp/sync-anthropic-token.log
+```
+
+The token syncs automatically every 15 minutes. Log at `/tmp/sync-anthropic-token.log`.
+
+**Manual sync:**
+```bash
+~/dev\ env/local-ai/scripts/sync-anthropic-token.sh
+```
+
+> **What changed in the fork:** `plugins/claude/plugin.js` line 2: `CRED_FILE` changed from `~/.claude/.credentials.json` to `~/.local-ai/anthropic-token.json`. Keychain fallback disabled. Auto-updater disabled (personal local build). Fork: https://github.com/kylie-grace/openusage
 
 ## Future goals
 
-- **OpenUsage custom plugin** — Fork `plugins/claude/plugin.js` in [openusage](https://github.com/robinebers/openusage) to read from `~/.local-ai/anthropic-token.json` instead of `~/.claude/.credentials.json`. A `launchd` plist (or cron) syncs the token from the `cli-proxy-api` Docker container to that custom path every 15 minutes. This lets openusage show Anthropic usage without ever touching the path Claude Code reads on startup. Requires building openusage locally from source.
+- **OpenUsage custom plugin** — ✅ Done. Patched fork at https://github.com/kylie-grace/openusage reads `~/.local-ai/anthropic-token.json`. Synced every 15min by `com.local-ai.sync-anthropic-token` launchd agent from CLIProxyAPI Docker container. Build with `bun run tauri build` in the fork.
 - **LiteLLM MCP support** — LiteLLM has a [built-in MCP server](https://docs.litellm.ai/docs/mcp) that exposes all your model routes as MCP tools. The intent is to wire this in so any MCP-aware client (Claude Code, Open WebUI, HolyClaude) can discover and call models via the MCP protocol rather than hand-configuring base URLs.
 - **Open WebUI MCP** — Open WebUI supports MCP via HTTP/SSE. Docker MCP (`docker mcp gateway run`) is stdio-based; bridging the two requires a sidecar like `supergateway`. Tracked for a future session.
 - **Copilot token auto-refresh** — automate `gh auth refresh && gh auth token` → restart litellm on a schedule so tokens never expire silently.

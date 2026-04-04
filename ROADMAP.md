@@ -64,20 +64,16 @@ Track what's done, what's in progress, and what's coming next.
 
 ## 📋 Backlog
 
-### OpenUsage custom plugin (next up)
-Fork `plugins/claude/plugin.js` in [openusage](https://github.com/robinebers/openusage) to read from `~/.local-ai/anthropic-token.json` instead of `~/.claude/.credentials.json`. A `launchd` agent syncs the token from the `cli-proxy-api` Docker container to that path every 15 minutes. Build openusage locally from source. See README "OpenUsage compatibility" for full constraint explanation.
+### ✅ OpenUsage — DONE
+- Fork: https://github.com/kylie-grace/openusage
+- `plugins/claude/plugin.js`: CRED_FILE → `~/.local-ai/anthropic-token.json`, keychain fallback disabled, auto-updater disabled
+- `scripts/sync-anthropic-token.sh`: converts CLIProxyAPI token format → claudeAiOauth JSON, writes to custom path
+- launchd agent `com.local-ai.sync-anthropic-token`: syncs every 15 minutes, runs at login
+- Build: `cd ~/dev\ env/openusage && bun install && bun run bundle:plugins && bun run tauri build`
+- Install: `cp -r src-tauri/target/release/bundle/macos/OpenUsage.app /Applications/`
 
-### Openwork (after openusage)
-[openwork](https://github.com/different-ai/openwork) — OpenCode-related, may work with this stack. Evaluate after the openusage fork is complete.
-
-### OpenUsage — Anthropic usage visibility (archived detail)
-openusage reads `~/.claude/.credentials.json` for the OAuth token. Claude Code also reads that file on startup and uses it to bypass the proxy — so we can't keep credentials there permanently.
-
-**Planned fix:** Fork `plugins/claude/plugin.js` in openusage to read from `~/.local-ai/anthropic-token.json` instead. A `launchd` agent syncs the token from the `cli-proxy-api` Docker container to that custom path every 15 minutes. Requires building openusage locally.
-
-**Interim workaround:** `scripts/sync-openusage-token.sh` — temporarily writes credentials for a manual check, then `--cleanup` removes them. Do not start a new Claude Code session while the file exists.
-
-See README "OpenUsage compatibility" section for full detail.
+### Openwork (after openusage is confirmed working)
+[openwork](https://github.com/different-ai/openwork) — OpenCode-related, may work with this stack. Evaluate after openusage build is verified.
 
 ### Open WebUI — Docker MCP integration
 Open WebUI supports MCP via HTTP/SSE endpoints. Docker MCP (`docker mcp gateway run`) is stdio-based.
