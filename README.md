@@ -159,7 +159,7 @@ SearXNG runs as part of the main stack and is accessible at **http://localhost:8
 **Wire into Open WebUI (one-time):**
 1. Open **http://localhost:3000** → Admin panel → Settings → Web Search
 2. Enable web search → provider: `SearXNG`
-3. URL: **`http://searxng:8080`** ← must use the Docker service name, not `localhost`. From inside the Open WebUI container, `localhost` resolves to the container itself, not your Mac.
+3. URL: **`http://searxng:8080/search?q=%s`** ← must use the Docker service name, not `localhost` or `127.0.0.1`. From inside the Open WebUI container those addresses resolve to the container itself, not the host or SearXNG.
 4. Save. Web search is now available in Open WebUI conversations.
 
 **HolyClaude access:** From inside HolyClaude, SearXNG is reachable at `http://host.docker.internal:8080`. You can configure this as a web search URL in any tool or MCP server running inside HolyClaude.
@@ -200,12 +200,9 @@ Your workspace files are in `holyclaude/workspace/` on the host — accessible f
 ```bash
 # Task management
 npm install -g task-master-ai
-
-# Gemini CLI authentication — opens a Google OAuth flow (URL + code, no browser redirect needed)
-gemini auth
 ```
 
-> **Gemini note:** HolyClaude's Gemini integration uses the native Gemini CLI (`~/.gemini/`), not the OpenAI-compatible LiteLLM endpoint. `gemini auth` must be run once to complete Google OAuth inside the container. The CLIProxyAPI Gemini OAuth session is a separate credential — HolyClaude's Gemini talks directly to Google.
+**Gemini in HolyClaude:** The native Gemini CLI tab is not available for Google Workspace accounts (umich.edu accounts get `RESTRICTED_DASHER_USER` — a Google policy restriction). Use `gemini-flash` or `gemini-pro` via the LiteLLM endpoint instead — these route through CLIProxyAPI and are fully available via `OPENAI_API_BASE_URL`.
 
 **Cursor login:** HolyClaude supports Cursor — add credentials in the HolyClaude settings UI.
 

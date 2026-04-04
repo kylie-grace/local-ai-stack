@@ -41,8 +41,7 @@ Track what's done, what's in progress, and what's coming next.
 - [x] `OPENAI_API_BASE_URL` + `OPENAI_API_KEY` added to compose — all LiteLLM routes (Gemini, Copilot, local) accessible by model name
 - [x] `task-master-ai@0.43.1` installed globally in container (persists in home volume)
 - [x] Cursor login documented as manual UI setup
-- [x] Gemini CLI auth documented (`gemini auth` in HolyClaude terminal — separate from CLIProxyAPI OAuth)
-- [ ] `gemini auth` not yet run — user needs to complete Google OAuth inside HolyClaude terminal
+- [x] Native Gemini CLI tab investigated — not usable with Google Workspace (umich.edu) accounts (`RESTRICTED_DASHER_USER`). Gemini available via LiteLLM (`gemini-flash`, `gemini-pro`) through `OPENAI_API_BASE_URL` instead.
 
 ### SearXNG
 - [x] SearXNG private metasearch at `localhost:8080` — added to main `docker-compose.yml`
