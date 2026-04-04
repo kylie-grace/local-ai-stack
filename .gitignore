@@ -1,8 +1,14 @@
 # secrets — never commit
 .env
 
+# internal ops tracking — not part of the public blueprint
+ROADMAP.md
+
 # CLIProxyAPI credential store — contains live OAuth tokens
 cliproxyapi/auths/
+
+# HolyClaude workspace — user project files, not part of this repo
+holyclaude/workspace/
 
 # ephemeral artifacts
 *.db

@@ -76,8 +76,10 @@ services:
       - "127.0.0.1:8317:8317"    # Web UI + API — localhost only
       - "127.0.0.1:8085:8085"    # Gemini OAuth callback
       - "127.0.0.1:54545:54545"  # Claude OAuth callback
+    environment:
+      MANAGEMENT_PASSWORD: "${CLIPROXY_MANAGEMENT_KEY}"
     volumes:
-      - ./cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml:ro
+      - ./cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml
       - cliproxyapi-auths:/root/.cli-proxy-api
       - cliproxyapi-logs:/CLIProxyAPI/logs
     security_opt:
@@ -90,6 +92,39 @@ services:
     networks:
       - litellm-net
 
+  # ── Open WebUI — unified chat frontend ──────────────────────────────────
+  # Chat UI at http://localhost:3000
+  # First run: create an admin account at the signup page.
+  # Models are pulled automatically from LiteLLM — all routes visible in the
+  # model selector. Conversations and settings persist in the open-webui-data volume.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.6.5@sha256:fe7a6870ec6b2fd540c0f2007e6aa812dc4bf04a2d0a305bb344eeb10de0a7b7
+    container_name: open-webui
+    restart: unless-stopped
+    depends_on:
+      litellm:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:8080"
+    environment:
+      OPENAI_API_BASE_URL: "http://litellm:4000/v1"
+      OPENAI_API_KEY: "${LITELLM_MASTER_KEY}"
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "true"
+      ENABLE_OLLAMA_API: "false"
+      TELEMETRY_ENABLED: "false"
+    volumes:
+      - open-webui-data:/app/backend/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: "1"
+    networks:
+      - litellm-net
+
 networks:
   litellm-net:
     driver: bridge
@@ -98,3 +133,4 @@ volumes:
   postgres-data:
   cliproxyapi-auths:
   cliproxyapi-logs:
+  open-webui-data:

@@ -1,21 +1,18 @@
 # LiteLLM Proxy Configuration
-# Backends: GitHub Copilot Enterprise, Anthropic, LM Studio, Gemini (pending)
+# Backends: GitHub Models, GitHub Copilot Enterprise, Anthropic OAuth, Gemini OAuth, LM Studio
 #
 # Key security properties:
 #   - success_callback / failure_callback both empty → no prompt/response exfiltration
 #   - telemetry: false → no usage data sent to LiteLLM servers
-#   - disable_spend_logs: true → no SQLite write pressure; DB stays ephemeral in /tmp
+#   - disable_spend_logs: true → no write pressure on Postgres
 
 # ── MODEL ROUTING ───────────────────────────────────────────────────────────
 model_list:
 
-  # ── GitHub Copilot Enterprise / GitHub Models API ──────────────────────
-  # Requires GITHUB_API_KEY in .env (GitHub PAT with models:read scope,
-  # or a Copilot Enterprise token — check your org's token guidance).
-  # Full model list: https://github.com/marketplace/models
-  #
-  # Usage: POST http://localhost:4000/v1/chat/completions
-  #        "model": "github/gpt-4o"
+  # ── GitHub Models API (free tier) ─────────────────────────────────────────
+  # Requires GITHUB_API_KEY in .env — classic PAT, no special scope.
+  # If org uses SAML SSO: authorize the token at github.com/settings/tokens after creation.
+  # Available models: gpt-4o, gpt-4o-mini, llama variants (free tier only)
 
   - model_name: github/gpt-4o
     litellm_params:
@@ -27,131 +24,257 @@ model_list:
       model: github/gpt-4o-mini
       api_key: os.environ/GITHUB_API_KEY
 
-  - model_name: github/o1
+  - model_name: github/llama-3.1-405b
     litellm_params:
-      model: github/o1
+      model: github/Meta-Llama-3.1-405B-Instruct
       api_key: os.environ/GITHUB_API_KEY
 
-  - model_name: github/o3-mini
+  - model_name: github/llama-3.1-8b
     litellm_params:
-      model: github/o3-mini
+      model: github/Meta-Llama-3.1-8B-Instruct
       api_key: os.environ/GITHUB_API_KEY
 
-  - model_name: github/claude-3.5-sonnet
-    litellm_params:
-      model: github/Claude-3.5-Sonnet
-      api_key: os.environ/GITHUB_API_KEY
+  # ── GitHub Copilot Enterprise ──────────────────────────────────────────────
+  # Requires COPILOT_TOKEN in .env — get it with: gh auth token
+  # Token refresh: gh auth refresh && gh auth token → update .env → restart litellm
+  # Endpoint: https://api.githubcopilot.com (different from GitHub Models API)
+  # Only models confirmed accessible via REST API are listed here.
+  # Models enabled in the Copilot UI but NOT accessible via API are excluded.
 
-  - model_name: github/claude-3.7-sonnet
+  - model_name: copilot/claude-opus
     litellm_params:
-      model: github/Claude-3.7-Sonnet
-      api_key: os.environ/GITHUB_API_KEY
+      model: openai/claude-opus-4.6
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
 
-  - model_name: github/llama-3.3-70b
+  - model_name: copilot/claude-sonnet
     litellm_params:
-      model: github/Llama-3.3-70B-Instruct
-      api_key: os.environ/GITHUB_API_KEY
+      model: openai/claude-sonnet-4.6
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
 
-  - model_name: github/mistral-large
+  - model_name: copilot/claude-haiku
     litellm_params:
-      model: github/Mistral-Large-2411
-      api_key: os.environ/GITHUB_API_KEY
+      model: openai/claude-haiku-4.5
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
 
-  # ── Anthropic Claude (via CLIProxyAPI — OAuth, no API key needed) ──────
-  # Uses your Claude account OAuth session from `--claude-login`.
-  # CLIProxyAPI is OpenAI-compatible; model names match what Claude Code exposes.
-  #
-  # Usage: "model": "claude-opus" / "claude-sonnet" / "claude-haiku"
-
-  - model_name: claude-opus
+  - model_name: copilot/gpt-5
     litellm_params:
-      model: openai/claude-opus-4-5
+      model: openai/gpt-5.4
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  - model_name: copilot/gpt-5.2-codex
+    litellm_params:
+      model: openai/gpt-5.2-codex
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  - model_name: copilot/gpt-5.3-codex
+    litellm_params:
+      model: openai/gpt-5.3-codex
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  # ── Anthropic Claude (via CLIProxyAPI — OAuth, Copilot-first failover target) ──
+  # These are the OAuth fallback routes. Primary routing goes through Copilot Enterprise.
+  # Direct names (claude-sonnet, claude-opus, claude-haiku) now point to Copilot first;
+  # these -oauth variants are used by the failover system and can also be called directly.
+  # Model names MUST match what CLIProxyAPI serves: GET /v0/management/auth-files/models
+
+  - model_name: claude-sonnet-oauth
+    litellm_params:
+      model: openai/claude-sonnet-4-6
       api_base: http://cli-proxy-api:8317/v1
       api_key: "internal"
+
+  - model_name: claude-opus-oauth
+    litellm_params:
+      model: openai/claude-opus-4-6
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+  - model_name: claude-haiku-oauth
+    litellm_params:
+      model: openai/claude-haiku-4-5-20251001
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+  # ── Primary Claude aliases — Copilot Enterprise first ─────────────────────
+  # These are the names callers (and Claude Code) should use.
+  # Routing: Copilot Enterprise → CLIProxyAPI OAuth → local model (via router_settings below)
+  # Also aliased to exact Anthropic model IDs for Claude Code ANTHROPIC_BASE_URL wiring.
 
   - model_name: claude-sonnet
     litellm_params:
-      model: openai/claude-sonnet-4-5
-      api_base: http://cli-proxy-api:8317/v1
-      api_key: "internal"
+      model: openai/claude-sonnet-4.6
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  - model_name: claude-opus
+    litellm_params:
+      model: openai/claude-opus-4.6
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
 
   - model_name: claude-haiku
     litellm_params:
-      model: openai/claude-haiku-4-5
-      api_base: http://cli-proxy-api:8317/v1
-      api_key: "internal"
+      model: openai/claude-haiku-4.5
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
 
-  # ── LM Studio (local, OpenAI-compatible, JIT wildcard) ─────────────────
-  # LM Studio runs at http://127.0.0.1:1234 on your Mac.
-  # Inside Docker, your Mac is reachable via host.docker.internal.
-  #
-  # Wildcard routing: any model_name starting with "lm-studio/" is stripped
-  # of the prefix and forwarded verbatim to LM Studio. LM Studio JIT-loads
-  # whatever model name it receives — no config change needed when you swap models.
-  #
-  # Usage: "model": "lm-studio/<exact-model-id-from-lmstudio-ui>"
-  # Example: "model": "lm-studio/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"
-  #
-  # To see what IDs LM Studio knows about, check the model name shown in
-  # LM Studio's UI or call: curl http://localhost:1234/v1/models
-  #
-  # LM Studio's API key field is unused; any non-empty string works.
+  # Exact Anthropic model IDs — used by Claude Code when ANTHROPIC_BASE_URL=localhost:4000
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/claude-sonnet-4.6
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: openai/claude-opus-4.6
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: openai/claude-haiku-4.5
+      api_base: https://api.githubcopilot.com
+      api_key: os.environ/COPILOT_TOKEN
+      extra_headers:
+        Copilot-Integration-Id: vscode-chat
+
+  # ── LM Studio (local, OpenAI-compatible, JIT wildcard) ─────────────────────
+  # LM Studio must be running with server enabled: Settings → Server → Start
+  # Wildcard: any model_name starting with "lm-studio/" forwards verbatim to LM Studio.
+  # Named local/* aliases below for easy access from Open WebUI / scripts.
+  # To verify exact model IDs: curl http://localhost:1234/v1/models
 
   - model_name: "lm-studio/*"
     litellm_params:
-      model: "openai/*"             # wildcard maps lm-studio/<x> → openai/<x> → LM Studio
+      model: "openai/*"
       api_base: http://host.docker.internal:1234/v1
       api_key: lm-studio
 
-  # ── Google Gemini (via CLIProxyAPI — no API key needed) ────────────────
-  # Routed through CLIProxyAPI which holds your OAuth session from `gemini --login`.
-  # CLIProxyAPI is OpenAI-compatible; we use the openai/ prefix with a custom api_base.
-  # "cli-proxy-api" resolves via Docker DNS — this port is never exposed to your Mac.
-  #
-  # When your org adds direct Gemini API access later, swap these to:
-  #   model: gemini/gemini-2.0-flash  +  api_key: os.environ/GEMINI_API_KEY
-  # and remove the api_base lines.
-  #
-  # Usage: "model": "gemini-flash" or "gemini-pro"
+  # Named local/* aliases — IDs verified from http://localhost:1234/v1/models
+  - model_name: local/qwen3-coder
+    litellm_params:
+      model: openai/qwen/qwen3-coder-30b
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/devstral-24b
+    litellm_params:
+      model: openai/mistralai/devstral-small-2-2512
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/qwen3-vl
+    litellm_params:
+      model: openai/qwen/qwen3-vl-4b
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/magistral-24b
+    litellm_params:
+      model: openai/mistralai/magistral-small-2509
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/gemma3-12b
+    litellm_params:
+      model: openai/google/gemma-3-12b
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/gpt-oss-20b
+    litellm_params:
+      model: openai/openai/gpt-oss-20b
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/mistral-nemo
+    litellm_params:
+      model: openai/mistral-nemo-instruct-2407
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/llama-3.1-8b
+    litellm_params:
+      model: openai/meta-llama-3.1-8b-instruct
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  - model_name: local/deepseek-r1-7b
+    litellm_params:
+      model: openai/deepseek-r1-distill-qwen-7b
+      api_base: http://host.docker.internal:1234/v1
+      api_key: lm-studio
+
+  # ── Google Gemini (via CLIProxyAPI — OAuth) ─────────────────────────────────
 
   - model_name: gemini-flash
     litellm_params:
-      model: openai/gemini-2.0-flash
-      api_base: http://cli-proxy-api:8317/v1
-      api_key: "internal"          # CLIProxyAPI has no key enforcement by default
-
-  - model_name: gemini-pro
-    litellm_params:
-      model: openai/gemini-1.5-pro
+      model: openai/gemini-2.5-flash
       api_base: http://cli-proxy-api:8317/v1
       api_key: "internal"
 
+  - model_name: gemini-pro
+    litellm_params:
+      model: openai/gemini-2.5-pro
+      api_base: http://cli-proxy-api:8317/v1
+      api_key: "internal"
+
+# ── ROUTER / FAILOVER SETTINGS ──────────────────────────────────────────────
+# Routing priority: Copilot Enterprise (primary) → Anthropic OAuth → local model
+# Fallback triggers on: rate limits (429), service errors (503), timeouts
+# Transparent to callers — they always use the short name (e.g. "claude-sonnet")
+router_settings:
+  num_retries: 2
+  retry_after: 5
+  fallbacks:
+    - {"claude-sonnet":          ["claude-sonnet-oauth",  "local/qwen3-coder"]}
+    - {"claude-opus":            ["claude-opus-oauth",    "local/devstral-24b"]}
+    - {"claude-haiku":           ["claude-haiku-oauth",   "local/llama-3.1-8b"]}
+    - {"claude-sonnet-4-6":      ["claude-sonnet-oauth",  "local/qwen3-coder"]}
+    - {"claude-opus-4-6":        ["claude-opus-oauth",    "local/devstral-24b"]}
+    - {"claude-haiku-4-5-20251001": ["claude-haiku-oauth","local/llama-3.1-8b"]}
+    - {"gemini-flash":           ["gemini-pro"]}
+    - {"gemini-pro":             ["copilot/gpt-5"]}
+
 # ── GENERAL SETTINGS ────────────────────────────────────────────────────────
 general_settings:
-  # Master key: every request to this proxy must include
-  #   Authorization: Bearer <LITELLM_MASTER_KEY>
-  # Set a strong random value in .env. Generate one:
-  #   openssl rand -hex 32
   master_key: os.environ/LITELLM_MASTER_KEY
-
-  # Disable spend/usage logging to keep the ephemeral SQLite DB empty
   disable_spend_logs: true
-
-  # CRITICAL: empty callback arrays prevent any prompt/response data from
-  # being forwarded to external services (Langfuse, Prometheus, webhooks, etc.)
   success_callback: []
   failure_callback: []
 
 # ── LITELLM LIBRARY SETTINGS ────────────────────────────────────────────────
 litellm_settings:
-  # Belt-and-suspenders alongside the env var — telemetry disabled here too
   telemetry: false
-
-  # Do not log verbose request/response details even internally
   set_verbose: false
-
-  # Drop unsupported params silently instead of erroring
   drop_params: true
-
-  # Request timeout in seconds (adjust per your slowest backend)
   request_timeout: 120
