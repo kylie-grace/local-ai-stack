@@ -44,6 +44,10 @@ services:
       LITELLM_TELEMETRY: "False"
       DISABLE_TELEMETRY_REPORTING: "True"
       LITELLM_LOG: "ERROR"
+      # Route /v1/messages through chat/completions instead of Responses API.
+      # Required: Copilot's Responses API endpoint doesn't support Claude models,
+      # so without this, agentic tool-call conversations fail after the first turn.
+      LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES: "true"
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
     security_opt:
       - no-new-privileges:true

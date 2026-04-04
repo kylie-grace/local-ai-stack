@@ -89,83 +89,81 @@ model_list:
       extra_headers:
         Copilot-Integration-Id: vscode-chat
 
-  # ── Anthropic Claude (via CLIProxyAPI — OAuth, Copilot-first failover target) ──
-  # These are the OAuth fallback routes. Primary routing goes through Copilot Enterprise.
-  # Direct names (claude-sonnet, claude-opus, claude-haiku) now point to Copilot first;
-  # these -oauth variants are used by the failover system and can also be called directly.
+  # ── Anthropic Claude (via CLIProxyAPI — OAuth) ───────────────────────────
+  # These -oauth variants are kept for direct callability and are also the
+  # named fallback targets in router_settings below.
   # Model names MUST match what CLIProxyAPI serves: GET /v0/management/auth-files/models
 
   - model_name: claude-sonnet-oauth
     litellm_params:
-      model: openai/claude-sonnet-4-6
-      api_base: http://cli-proxy-api:8317/v1
+      model: anthropic/claude-sonnet-4-6
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
       api_key: "internal"
 
   - model_name: claude-opus-oauth
     litellm_params:
-      model: openai/claude-opus-4-6
-      api_base: http://cli-proxy-api:8317/v1
+      model: anthropic/claude-opus-4-6
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
       api_key: "internal"
 
   - model_name: claude-haiku-oauth
     litellm_params:
-      model: openai/claude-haiku-4-5-20251001
-      api_base: http://cli-proxy-api:8317/v1
+      model: anthropic/claude-haiku-4-5-20251001
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
       api_key: "internal"
 
-  # ── Primary Claude aliases — Copilot Enterprise first ─────────────────────
+  # ── Primary Claude aliases — CLIProxyAPI OAuth first ─────────────────────
   # These are the names callers (and Claude Code) should use.
-  # Routing: Copilot Enterprise → CLIProxyAPI OAuth → local model (via router_settings below)
+  # Routing: CLIProxyAPI OAuth → Copilot Enterprise → local model (via router_settings below)
+  # OAuth is primary: daily/hourly limits but best direct quality.
+  # Copilot is the heavy-usage fallback: monthly quota, no daily cap.
   # Also aliased to exact Anthropic model IDs for Claude Code ANTHROPIC_BASE_URL wiring.
 
   - model_name: claude-sonnet
     litellm_params:
-      model: openai/claude-sonnet-4.6
-      api_base: https://api.githubcopilot.com
-      api_key: os.environ/COPILOT_TOKEN
-      extra_headers:
-        Copilot-Integration-Id: vscode-chat
+      model: anthropic/claude-sonnet-4-6
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
+      api_key: "internal"
 
   - model_name: claude-opus
     litellm_params:
-      model: openai/claude-opus-4.6
-      api_base: https://api.githubcopilot.com
-      api_key: os.environ/COPILOT_TOKEN
-      extra_headers:
-        Copilot-Integration-Id: vscode-chat
+      model: anthropic/claude-opus-4-6
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
+      api_key: "internal"
 
   - model_name: claude-haiku
     litellm_params:
-      model: openai/claude-haiku-4.5
-      api_base: https://api.githubcopilot.com
-      api_key: os.environ/COPILOT_TOKEN
-      extra_headers:
-        Copilot-Integration-Id: vscode-chat
+      model: anthropic/claude-haiku-4-5-20251001
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
+      api_key: "internal"
 
   # Exact Anthropic model IDs — used by Claude Code when ANTHROPIC_BASE_URL=localhost:4000
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: openai/claude-sonnet-4.6
-      api_base: https://api.githubcopilot.com
-      api_key: os.environ/COPILOT_TOKEN
-      extra_headers:
-        Copilot-Integration-Id: vscode-chat
+      model: anthropic/claude-sonnet-4-6
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
+      api_key: "internal"
 
   - model_name: claude-opus-4-6
     litellm_params:
-      model: openai/claude-opus-4.6
-      api_base: https://api.githubcopilot.com
-      api_key: os.environ/COPILOT_TOKEN
-      extra_headers:
-        Copilot-Integration-Id: vscode-chat
+      model: anthropic/claude-opus-4-6
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
+      api_key: "internal"
 
   - model_name: claude-haiku-4-5-20251001
     litellm_params:
-      model: openai/claude-haiku-4.5
-      api_base: https://api.githubcopilot.com
-      api_key: os.environ/COPILOT_TOKEN
-      extra_headers:
-        Copilot-Integration-Id: vscode-chat
+      model: anthropic/claude-haiku-4-5-20251001
+      custom_llm_provider: anthropic
+      api_base: http://cli-proxy-api:8317
+      api_key: "internal"
 
   # ── LM Studio (local, OpenAI-compatible) ──────────────────────────────────
   # LM Studio must be running with server enabled: Settings → Server → Start
@@ -249,19 +247,22 @@ router_settings:
   num_retries: 2
   retry_after: 5
   fallbacks:
-    - {"claude-sonnet":          ["claude-sonnet-oauth",  "local/qwen3-coder"]}
-    - {"claude-opus":            ["claude-opus-oauth",    "local/devstral-24b"]}
-    - {"claude-haiku":           ["claude-haiku-oauth",   "local/llama-3.1-8b"]}
-    - {"claude-sonnet-4-6":      ["claude-sonnet-oauth",  "local/qwen3-coder"]}
-    - {"claude-opus-4-6":        ["claude-opus-oauth",    "local/devstral-24b"]}
-    - {"claude-haiku-4-5-20251001": ["claude-haiku-oauth","local/llama-3.1-8b"]}
-    - {"gemini-flash":           ["gemini-pro"]}
-    - {"gemini-pro":             ["copilot/gpt-5"]}
+    # Primary: CLIProxyAPI OAuth (daily/hourly limits but best direct quality)
+    # Fallback 1: Copilot Enterprise (monthly quota — best for heavy usage)
+    # Fallback 2: local model (always available, no quota)
+    - {"claude-sonnet":             ["copilot/claude-sonnet", "local/qwen3-coder"]}
+    - {"claude-opus":               ["copilot/claude-opus",   "local/devstral-24b"]}
+    - {"claude-haiku":              ["copilot/claude-haiku",  "local/llama-3.1-8b"]}
+    - {"claude-sonnet-4-6":         ["copilot/claude-sonnet", "local/qwen3-coder"]}
+    - {"claude-opus-4-6":           ["copilot/claude-opus",   "local/devstral-24b"]}
+    - {"claude-haiku-4-5-20251001": ["copilot/claude-haiku",  "local/llama-3.1-8b"]}
+    - {"gemini-flash":              ["gemini-pro"]}
+    - {"gemini-pro":                ["copilot/gpt-5"]}
 
 # ── GENERAL SETTINGS ────────────────────────────────────────────────────────
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  disable_spend_logs: true
+  disable_spend_logs: false
   success_callback: []
   failure_callback: []
 

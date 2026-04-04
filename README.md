@@ -18,7 +18,9 @@ Open WebUI :3000  →  LiteLLM :4000  →  all of the above (browser chat UI)
 HolyClaude :3001  →  LiteLLM :4000  →  all of the above (Claude Code workstation)
 ```
 
-**Failover is automatic:** `claude-sonnet` tries Copilot Enterprise first → if rate-limited or unavailable, falls back to Anthropic OAuth (via CLIProxyAPI) → then to local LM Studio. You always use the same model name.
+**Failover is automatic:** `claude-sonnet` tries Anthropic OAuth (via CLIProxyAPI) first → if rate-limited, falls back to Copilot Enterprise (monthly quota) → then to local LM Studio. You always use the same model name.
+
+> **Why OAuth first?** Anthropic OAuth via CLIProxyAPI gives you fresh daily/hourly limits from the real Anthropic API. Copilot Enterprise has a deeper monthly quota but a lower rate ceiling. Routing OAuth-first maximises throughput during active sessions and uses Copilot as the high-volume overflow bucket.
 
 ## Why
 
@@ -105,6 +107,8 @@ Open **http://localhost:8317/management.html** and enter your `CLIPROXY_MANAGEME
 > **Troubleshooting management access:** If you get 404 on the management API, check that `MANAGEMENT_PASSWORD` is set in the `cli-proxy-api` service environment in `docker-compose.yml`. This env var is the primary auth path — the config-file bcrypt hash is a fallback. Both are set by default in this repo.
 >
 > **Model name alignment:** After logging in, verify model names in `litellm-config.yaml` match what CLIProxyAPI serves. Check: `curl http://localhost:8317/v0/management/auth-files/models -H "Authorization: Bearer <your-key>"`
+>
+> **CLIProxyAPI logs are NOT in Docker stdout.** `docker logs cli-proxy-api` will appear empty. Real request logs are written to the `cliproxyapi-logs` volume at `/CLIProxyAPI/logs/main.log`. To view them: `docker exec cli-proxy-api tail -f /CLIProxyAPI/logs/main.log`
 
 From the management UI:
 - **Claude** — click the Claude login button, complete the Anthropic OAuth browser flow
@@ -199,27 +203,45 @@ Base URL:  http://localhost:4000/v1
 API Key:   <your LITELLM_MASTER_KEY>
 ```
 
-**Claude Code** — add `ANTHROPIC_BASE_URL` to `~/.claude/settings.json`:
+**Claude Code** — `~/.claude/settings.json` requires **both** a virtual key and the base URL:
 
 ```json
 {
   "env": {
+    "ANTHROPIC_API_KEY": "<your-litellm-virtual-key>",
     "ANTHROPIC_BASE_URL": "http://localhost:4000"
   }
 }
 ```
 
-This routes all Claude Code requests through LiteLLM → Copilot Enterprise (primary) → Anthropic OAuth fallback. No direct API key needed.
+Generate the virtual key once after the stack is running:
+
+```bash
+MASTER_KEY=$(grep "^LITELLM_MASTER_KEY=" ~/dev\ env/local-ai/.env | cut -d= -f2)
+curl -s -X POST http://localhost:4000/key/generate \
+  -H "Authorization: Bearer ${MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"key_alias":"claude-code","duration":null,"models":[]}'
+# Copy the "key" value from the response into settings.json as ANTHROPIC_API_KEY
+```
+
+> **Why the virtual key?** Claude Code sends `ANTHROPIC_API_KEY` as an auth token to LiteLLM. Without a valid virtual key in LiteLLM's DB, every request gets a 401. The master key also works here, but a separate virtual key is cleaner.
+>
+> **If Claude Code gets 401 "Invalid proxy server token"** after a Postgres restart or stack wipe, the virtual key was lost. Re-run the `key/generate` curl above and update `settings.json`. The master key lives in `.env` and is never lost this way.
+
+Also make sure Claude Code is using the API key env var, **not** a logged-in Anthropic account session. In Claude Code, run `/logout` if you have an active Anthropic session — the env var takes precedence once you're logged out.
 
 ## Model reference
 
-### Anthropic Claude (Copilot Enterprise primary — Anthropic OAuth fallback)
+### Anthropic Claude (CLIProxyAPI OAuth primary — Copilot Enterprise fallback)
 
 | Model name | Primary | Fallback 1 | Fallback 2 |
 |---|---|---|---|
-| `claude-opus` | Copilot Enterprise | `claude-opus-oauth` (CLIProxyAPI) | `local/devstral-24b` |
-| `claude-sonnet` | Copilot Enterprise | `claude-sonnet-oauth` (CLIProxyAPI) | `local/qwen3-coder` |
-| `claude-haiku` | Copilot Enterprise | `claude-haiku-oauth` (CLIProxyAPI) | `local/llama-3.1-8b` |
+| `claude-opus` | CLIProxyAPI OAuth (Anthropic direct) | `copilot/claude-opus` (Copilot Enterprise) | `local/devstral-24b` |
+| `claude-sonnet` | CLIProxyAPI OAuth (Anthropic direct) | `copilot/claude-sonnet` (Copilot Enterprise) | `local/qwen3-coder` |
+| `claude-haiku` | CLIProxyAPI OAuth (Anthropic direct) | `copilot/claude-haiku` (Copilot Enterprise) | `local/llama-3.1-8b` |
+
+The `-oauth` variants (`claude-sonnet-oauth`, etc.) can also be called directly to bypass routing.
 
 ### Google Gemini (via CLIProxyAPI OAuth)
 
@@ -280,16 +302,55 @@ docker compose -f docker-compose.holyclaude.yml down
 
 # View logs
 docker compose logs -f litellm
-docker compose logs -f cli-proxy-api
 docker compose logs -f open-webui
 docker logs -f holy-claude
+# CLIProxyAPI does NOT log to Docker stdout — use this instead:
+docker exec cli-proxy-api tail -f /CLIProxyAPI/logs/main.log
 
 # Restart a single service
 docker compose restart litellm
 
+# IMPORTANT: config file changes need restart, not just up -d
+# Editing litellm-config.yaml while the container is running does NOT hot-reload it.
+# Always use:
+docker compose restart litellm
+# NOT: docker compose up -d  (this won't recreate an already-running container)
+
 # Full reset — WARNING: destroys all data including OAuth credentials and chat history
 docker compose down -v
 ```
+
+## LiteLLM v1.83 quirks (read before debugging routing issues)
+
+These are non-obvious behaviors in the pinned version that were discovered the hard way. Do not attempt to "simplify" the config without understanding these first.
+
+### 1. Responses API routing breaks Claude tool calls
+
+**What happens:** LiteLLM v1.83 routes `/v1/messages` requests (what Claude Code sends) through an experimental "Responses API adapter" when the backend provider is `openai`. GitHub Copilot's Responses API endpoint exists but doesn't support Claude models — it returns `unsupported_api_for_model`. Simple text messages work; anything involving tool calls (`tool_use`/`tool_result`) fails silently.
+
+**The fix:** `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES=true` is set in `docker-compose.yml` for the litellm service. This forces all `/v1/messages` traffic through chat completions instead of the Responses API.
+
+**Symptom if missing:** Claude Code gets one response, then hangs or returns empty tool inputs on all subsequent turns.
+
+### 2. CLIProxyAPI streaming drops tool parameters without `custom_llm_provider`
+
+**What happens:** CLIProxyAPI's OpenAI-compat endpoint (`/v1/chat/completions`) sends tool call arguments in a single streaming chunk rather than incrementally. LiteLLM's streaming iterator only handles incremental chunks — it drops the single-chunk arguments, resulting in tool calls that always have `input: {}`.
+
+**The root cause (two-part):** 
+- The LiteLLM router passes the *alias* model name (e.g. `claude-sonnet`) to `litellm.anthropic_messages`, not the deployment model name (`anthropic/claude-sonnet-4-6`). Without a provider prefix, LiteLLM can't determine the provider.
+- Without a detected provider, `anthropic_messages_provider_config = None`, so the request falls through to the completion-transformer path that hits `/v1/chat/completions` instead of `/v1/messages`.
+- CLIProxyAPI's `/v1/messages` (native Anthropic format) streams arguments correctly with proper `input_json_delta` events. The `/v1/chat/completions` path does not.
+
+**The fix:** All CLIProxyAPI-backed models in `litellm-config.yaml` include:
+```yaml
+custom_llm_provider: anthropic
+api_base: http://cli-proxy-api:8317   # NO /v1 suffix — the anthropic provider appends /v1/messages
+```
+This ensures the provider is detected correctly even when the router passes the alias name, routing to `/v1/messages` directly.
+
+**Symptom if `custom_llm_provider` is missing:** Streaming tool calls return `"input": {}` — the model seems to call tools but with no arguments. Non-streaming calls work fine (different code path).
+
+**Symptom if `/v1` is in the api_base:** Requests go to `http://cli-proxy-api:8317/v1/v1/messages` (doubled path) and return 404.
 
 ## Security notes
 
