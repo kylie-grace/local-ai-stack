@@ -14,8 +14,10 @@ Your tools  →  LiteLLM :4000  →  GitHub Models (free tier, PAT)
                                →  LM Studio / Ollama :1234 (local models)
 
 Open WebUI :3000  →  LiteLLM :4000  →  all of the above (browser chat UI)
+                →  SearXNG :8080    →  web search (enabled in Open WebUI settings)
 
 HolyClaude :3001  →  LiteLLM :4000  →  all of the above (Claude Code workstation)
+                  →  SearXNG :8080  →  web search (via host.docker.internal)
 ```
 
 **Failover is automatic:** `claude-sonnet` tries Anthropic OAuth (via CLIProxyAPI) first → if rate-limited, falls back to Copilot Enterprise (monthly quota) → then to local LM Studio. You always use the same model name.
@@ -41,6 +43,7 @@ HolyClaude :3001  →  LiteLLM :4000  →  all of the above (Claude Code worksta
 | **LiteLLM** | `ghcr.io/berriai/litellm` v1.83.0-nightly | `:4000` | Proxy + admin UI + failover routing |
 | **CLIProxyAPI** | `eceasy/cli-proxy-api` v6.9.13 | `:8317` | OAuth bridge for Claude + Gemini |
 | **Open WebUI** | `ghcr.io/open-webui/open-webui` v0.6.5 | `:3000` | Browser chat UI |
+| **SearXNG** | `searxng/searxng` | `:8080` | Private metasearch engine (Open WebUI + HolyClaude) |
 | **PostgreSQL** | `postgres:16-alpine` | internal only | LiteLLM backend DB |
 | **HolyClaude** | `coderluii/holyclaude` | `:3001` | Claude Code workstation (separate compose) |
 
@@ -149,13 +152,29 @@ Named `local/*` aliases are pre-configured for 9 models. If an alias fails, veri
 
 > **Health dashboard note:** `local/*` models will show **unhealthy** in the LiteLLM dashboard when they aren't loaded. This is expected — load the model in LM Studio (or pull it in Ollama) and the health check turns green automatically. The `local/deepseek-r1-7b` entry will be healthy if that model is loaded, and so on for each one.
 
-### 7. Open WebUI (browser chat)
+### 7. SearXNG (private web search)
+
+SearXNG runs as part of the main stack and is accessible at **http://localhost:8080**.
+
+**Wire into Open WebUI (one-time):**
+1. Open **http://localhost:3000** → Admin panel → Settings → Web Search
+2. Enable web search → provider: `SearXNG`
+3. URL: **`http://searxng:8080`** ← must use the Docker service name, not `localhost`. From inside the Open WebUI container, `localhost` resolves to the container itself, not your Mac.
+4. Save. Web search is now available in Open WebUI conversations.
+
+**HolyClaude access:** From inside HolyClaude, SearXNG is reachable at `http://host.docker.internal:8080`. You can configure this as a web search URL in any tool or MCP server running inside HolyClaude.
+
+**Browser integration (Chrome / Brave):** SearXNG can be set as your default search engine. See [Replacing Google with SearXNG as the default in Chrome](https://blog.ktz.me/replacing-google-with-searxng-as-the-default-in-chrome/). The search URL to use is `http://localhost:8080/search?q=%s`.
+
+> **JSON API:** The `formats: [html, json]` setting in `searxng/settings.yml` enables the JSON endpoint at `/search?q=<query>&format=json`. This is what Open WebUI calls internally. If the JSON endpoint returns 400, verify `formats` includes `json` and restart: `docker compose restart searxng`.
+
+### 8. Open WebUI (browser chat)
 
 Browse to **http://localhost:3000**. On first run, create an admin account — local only, no external registration.
 
 All LiteLLM model routes appear automatically in the model selector.
 
-### 8. HolyClaude (Claude Code workstation)
+### 9. HolyClaude (Claude Code workstation)
 
 HolyClaude is a full Claude Code environment with a browser-based IDE. It runs **separately** from the main stack so you can stop it to free memory without affecting LiteLLM/Claude/Gemini.
 
@@ -171,17 +190,32 @@ Browse to **http://localhost:3001**.
 
 HolyClaude is pre-configured to:
 - Route all Claude Code requests through LiteLLM (`ANTHROPIC_BASE_URL=http://host.docker.internal:4000`)
+- Access all LiteLLM model routes (Gemini, Copilot, GitHub, local) via `OPENAI_API_BASE_URL=http://host.docker.internal:4000/v1` — use any model by name (e.g. `gemini-flash`, `copilot/claude-sonnet`, `local/qwen3-coder`)
 - Use Docker MCP — the same `docker mcp gateway run` MCP server you use on your host is available inside HolyClaude via the mounted Docker socket
 
 Your workspace files are in `holyclaude/workspace/` on the host — accessible from both the HolyClaude UI and directly on your Mac.
 
+**One-time setup inside HolyClaude:**
+
+```bash
+# Task management (run once inside the HolyClaude terminal — persists in the home volume)
+npm install -g task-master-ai
+```
+
+**SearXNG in HolyClaude:** Available at `http://host.docker.internal:8080`. Configure as a web search URL in any tool or MCP server that supports it.
+
+**Cursor login:** HolyClaude supports Cursor-style login — add your credentials manually in the HolyClaude settings UI.
+
 > **Docker MCP note:** Both your host Claude Code and HolyClaude use Docker Desktop's MCP toolkit (`docker mcp gateway run`). This is configured in Claude Code's `~/.claude.json` on the host, and in `holyclaude/claude.json` which is mounted into the container. If you add new MCP servers to your host config, mirror them in `holyclaude/claude.json`.
 
-### 9. Verify
+### 10. Verify
 
 ```bash
 # LiteLLM health
 curl http://localhost:4000/health/liveliness
+
+# SearXNG health
+curl -s "http://localhost:8080/search?q=test&format=json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'SearXNG OK — {len(d[\"results\"])} results')"
 
 # List available models
 curl http://localhost:4000/v1/models \
@@ -192,9 +226,13 @@ curl -s -X POST http://localhost:4000/v1/chat/completions \
   -H "Authorization: Bearer sk-local-YOUR_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"claude-sonnet","messages":[{"role":"user","content":"say hi"}],"max_tokens":10}'
+
+# Usage/spend logs (token counts per request — spend is $0 for OAuth providers without pricing config)
+curl -s "http://localhost:4000/spend/logs?limit=5" \
+  -H "Authorization: Bearer sk-local-YOUR_MASTER_KEY" | python3 -m json.tool
 ```
 
-### 10. Wire up your tools
+### 11. Wire up your tools
 
 Anywhere you configure an OpenAI-compatible client:
 
@@ -290,7 +328,7 @@ Only models confirmed accessible via the Copilot REST API are listed. Models tha
 ## Managing the stack
 
 ```bash
-# Start main stack
+# Start main stack (includes SearXNG)
 docker compose up -d
 
 # Stop main stack (data preserved in Docker volumes)
@@ -352,17 +390,79 @@ This ensures the provider is detected correctly even when the router passes the 
 
 **Symptom if `/v1` is in the api_base:** Requests go to `http://cli-proxy-api:8317/v1/v1/messages` (doubled path) and return 404.
 
+### 3. Config changes need `restart`, not `up -d`
+
+**What happens:** After editing `litellm-config.yaml`, running `docker compose up -d` does nothing — the container is already running and the image/env hasn't changed, so Docker skips recreation. The old config stays in memory.
+
+**The fix:** Always use `docker compose restart litellm` after editing `litellm-config.yaml`.
+
+**Symptom if missed:** Changes appear to have no effect; you spend time debugging config that was never loaded.
+
+### 4. Virtual keys are lost on Postgres wipe
+
+LiteLLM stores virtual keys (the `sk-...` tokens callers use) in the Postgres `LiteLLM_VerificationTokenTable`. If Postgres is wiped or the volume is removed, all virtual keys disappear.
+
+**Symptom:**
+```
+401 {"error":{"message":"Authentication Error, Invalid proxy server token passed...
+Unable to find token in cache or LiteLLM_VerificationTokenTable"}}
+```
+
+**Fix — regenerate the virtual key:**
+```bash
+MASTER_KEY=$(grep "^LITELLM_MASTER_KEY=" ~/dev\ env/local-ai/.env | cut -d= -f2)
+curl -s -X POST http://localhost:4000/key/generate \
+  -H "Authorization: Bearer ${MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"key_alias":"claude-code","duration":null,"models":[]}'
+```
+
+Update `ANTHROPIC_API_KEY` in `~/.claude/settings.json` with the returned `"key"` value.
+
+> **The master key never lives in the DB** — `LITELLM_MASTER_KEY` from `.env` always works and survives a Postgres wipe. Only virtual keys are lost.
+
+### 5. Docker VM disk capacity
+
+LiteLLM (and the stack generally) fails hard if Docker's internal VM disk runs out of space. Postgres panics with `No space left on device` and enters a crash-recovery loop, taking the whole stack down.
+
+**Check disk usage:**
+```bash
+docker system df
+```
+
+**If >80% full, prune before heavy workloads:**
+```bash
+docker image prune -f    # dangling images
+docker builder prune -f  # build cache
+# docker volume prune -f  # ⚠️ check first — will destroy data if not careful
+```
+
+> See `copilot-repairs.md` for the full incident log from 2026-04-04 when this took the stack down.
+
 ## Security notes
 
-- **Inbound**: all ports bound to `127.0.0.1` — nothing outside this machine can connect
-- **Images**: pinned by SHA256 digest — tags cannot be silently re-pointed to a different image
-- **Secrets**: `.env` is gitignored; `cliproxyapi/config.yaml` is marked `skip-worktree` after you add your management key
-- **Telemetry**: disabled in both LiteLLM config and environment — no usage data sent anywhere
-- **Callbacks**: `success_callback` and `failure_callback` are explicitly empty — prompts and responses never forwarded
-- **Containers**: `no-new-privileges` and `cap_drop: ALL` on main stack containers
-- **HolyClaude Docker socket**: HolyClaude mounts `/var/run/docker.sock` to support Docker MCP. This grants full Docker access from within the container — acceptable since it's localhost-only and operator-controlled
-- **Database**: Postgres is not exposed on any host port
-- **Version pinning**: LiteLLM locked to v1.83.0-nightly to avoid a callback-based exfiltration CVE
+### Inbound network
+- All published ports are bound to `127.0.0.1` — nothing on your LAN or VPN can connect
+- Postgres (`5432`) has no host port at all — internal-only to the Docker bridge
+- `docker ps` should show all entries as `127.0.0.1:PORT->PORT/tcp`, never `0.0.0.0:PORT->PORT/tcp`
+
+### Docker networks
+- All main stack containers share `litellm-net` (isolated bridge) — they can reach each other by service name but are not reachable from outside Docker
+- HolyClaude runs on its own default network (`local-ai_default`) and reaches the main stack via `host.docker.internal` (Mac Docker Desktop host-gateway)
+- SearXNG is on `litellm-net` — Open WebUI and LiteLLM can reach it at `http://searxng:8080`; host can reach it at `http://localhost:8080`
+
+### Container hardening
+- `no-new-privileges: true` and `cap_drop: ALL` on all main stack containers
+- HolyClaude mounts `/var/run/docker.sock` for Docker MCP — grants full Docker control from within the container. Acceptable since it's localhost-only and operator-controlled, but do not expose HolyClaude's port externally
+
+### Images and secrets
+- All images pinned by SHA256 digest — tags cannot be silently re-pointed to a different image
+- `.env` is gitignored; `cliproxyapi/config.yaml` is marked `skip-worktree` after you set your management key
+
+### Telemetry and callbacks
+- `success_callback` and `failure_callback` are explicitly empty in `litellm-config.yaml` — prompts and responses are never forwarded to external services
+- `LITELLM_TELEMETRY: "False"` and `DISABLE_TELEMETRY_REPORTING: "True"` set in the container environment
+- LiteLLM locked to v1.83.0-nightly to avoid a later CVE where callbacks could be used to silently exfiltrate prompts
 
 ## Updating
 
@@ -379,8 +479,32 @@ For LiteLLM: check [release notes](https://github.com/BerriAI/litellm/releases) 
 - **[HolyClaude](https://github.com/CoderLuii/HolyClaude)** — enhanced Claude Code workstation, runs as a companion container alongside this stack. Pre-configured to route through LiteLLM and use Docker MCP. See `docker-compose.holyclaude.yml`.
 - **[Docker MCP Toolkit](https://docs.docker.com/ai/mcp-catalog-and-toolkit/)** — Docker Desktop's MCP server catalog. Both host Claude Code and HolyClaude use this.
 
+## Usage tracking
+
+LiteLLM logs every request to Postgres with token counts (prompt, completion, cache read/write) per model. The admin UI at `http://localhost:4000/ui` shows this under the Usage tab.
+
+**Token counts are always populated.** Dollar spend shows `$0.00` for OAuth-backed models (CLIProxyAPI, Copilot) because there's no static pricing to map against. If you want dollar estimates, add `input_cost_per_token` / `output_cost_per_token` to the relevant model entries in `litellm-config.yaml`.
+
+### OpenUsage compatibility
+
+[openusage](https://github.com/robinebers/openusage) is a macOS menu bar app that tracks usage across AI providers. Its Claude plugin reads `~/.claude/.credentials.json` (or the macOS keychain under `"Claude Code-credentials"`) to obtain an Anthropic OAuth token and calls `https://api.anthropic.com/api/oauth/usage`.
+
+**The constraint:** Claude Code CLI also reads `~/.claude/.credentials.json` on startup. If that file exists, Claude Code uses the OAuth session directly — bypassing the LiteLLM proxy. This is why `/logout` is required for the proxy to work. Writing the CLIProxyAPI OAuth token back to `.credentials.json` for openusage would break the proxy on the next Claude Code start.
+
+**Current workaround:** `scripts/sync-openusage-token.sh` can temporarily write the CLIProxyAPI token to `.credentials.json` for a manual usage check, then remove it. Run `--cleanup` immediately after checking:
+```bash
+./scripts/sync-openusage-token.sh           # write credentials
+# → check openusage
+./scripts/sync-openusage-token.sh --cleanup  # remove credentials
+```
+⚠️ Do not start a new Claude Code terminal session while `.credentials.json` exists.
+
+**Planned long-term fix:** Fork the openusage Claude plugin (`plugins/claude/plugin.js`) to read from a custom path (e.g. `~/.local-ai/anthropic-token.json`) instead of `~/.claude/.credentials.json`. A `launchd` agent keeps that custom path fresh from the Docker volume on a schedule. This eliminates the conflict entirely. See [Future goals](#future-goals) below.
+
 ## Future goals
 
+- **OpenUsage custom plugin** — Fork `plugins/claude/plugin.js` in [openusage](https://github.com/robinebers/openusage) to read from `~/.local-ai/anthropic-token.json` instead of `~/.claude/.credentials.json`. A `launchd` plist (or cron) syncs the token from the `cli-proxy-api` Docker container to that custom path every 15 minutes. This lets openusage show Anthropic usage without ever touching the path Claude Code reads on startup. Requires building openusage locally from source.
 - **LiteLLM MCP support** — LiteLLM has a [built-in MCP server](https://docs.litellm.ai/docs/mcp) that exposes all your model routes as MCP tools. The intent is to wire this in so any MCP-aware client (Claude Code, Open WebUI, HolyClaude) can discover and call models via the MCP protocol rather than hand-configuring base URLs.
 - **Open WebUI MCP** — Open WebUI supports MCP via HTTP/SSE. Docker MCP (`docker mcp gateway run`) is stdio-based; bridging the two requires a sidecar like `supergateway`. Tracked for a future session.
 - **Copilot token auto-refresh** — automate `gh auth refresh && gh auth token` → restart litellm on a schedule so tokens never expire silently.
+- **LiteLLM model pricing** — add `input_cost_per_token` / `output_cost_per_token` to model entries in `litellm-config.yaml` so the Usage tab shows dollar estimates alongside token counts.

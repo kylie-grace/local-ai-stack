@@ -1,0 +1,29 @@
+# SearXNG configuration for local-ai stack
+# Inherits all defaults; only overrides what we need.
+use_default_settings: true
+
+server:
+  # Generated with: openssl rand -hex 32
+  # This is a local-only instance — secret just prevents CSRF, not a user-facing secret.
+  secret_key: "6f34d993e68bf53821ef682abeb5f2699420256d0e518715b4bd5874c74d18d3"
+  limiter: false          # No rate limiting — localhost only, single user
+  public_instance: false
+  image_proxy: false      # Don't proxy images — not needed for AI search use
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  # JSON format required for Open WebUI and any API callers.
+  # html is kept for the browser UI at localhost:8080.
+  formats:
+    - html
+    - json
+
+ui:
+  default_theme: simple
+  default_locale: en
+
+# Outgoing requests — no proxy, direct from Docker
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 30.0

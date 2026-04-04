@@ -129,6 +129,38 @@ services:
     networks:
       - litellm-net
 
+  # ── SearXNG — private local metasearch engine ───────────────────────────
+  # Browser UI at http://localhost:8080
+  # API at http://searxng:8080 (internal Docker DNS — used by Open WebUI web search)
+  # HolyClaude access: http://host.docker.internal:8080
+  #
+  # Open WebUI web search setup (one-time, in the Open WebUI admin panel):
+  #   Admin → Settings → Web Search → enable → provider: SearXNG
+  #   URL: http://searxng:8080
+  searxng:
+    image: searxng/searxng:latest@sha256:89bb5f6cab650bd3dcdbbb4346fd885036426fe095f8ec985c0aa953376143ac
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: "http://localhost:8080/"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "1"
+    networks:
+      - litellm-net
+
 networks:
   litellm-net:
     driver: bridge

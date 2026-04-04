@@ -25,6 +25,10 @@ services:
       # host.docker.internal resolves to the Mac's localhost from inside Docker.
       ANTHROPIC_BASE_URL: "http://host.docker.internal:4000"
       ANTHROPIC_API_KEY: "${LITELLM_MASTER_KEY}"
+      # OpenAI-compatible endpoint — gives HolyClaude access to all LiteLLM model routes
+      # including gemini-flash, gemini-pro, copilot/*, github/*, local/* by model name.
+      OPENAI_API_BASE_URL: "http://host.docker.internal:4000/v1"
+      OPENAI_API_KEY: "${LITELLM_MASTER_KEY}"
       # Match your Mac's UID/GID so workspace files have correct ownership.
       PUID: "501"
       PGID: "20"
