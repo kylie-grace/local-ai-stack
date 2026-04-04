@@ -11,14 +11,14 @@ Your tools  →  LiteLLM :4000  →  GitHub Models (free tier, PAT)
                                →  GitHub Copilot Enterprise (OAuth via gh CLI)
                                →  Anthropic Claude (OAuth via CLIProxyAPI)
                                →  Google Gemini (OAuth via CLIProxyAPI)
-                               →  LM Studio :1234 (any local model, JIT loaded)
+                               →  LM Studio / Ollama :1234 (local models)
 
 Open WebUI :3000  →  LiteLLM :4000  →  all of the above (browser chat UI)
 
 HolyClaude :3001  →  LiteLLM :4000  →  all of the above (Claude Code workstation)
 ```
 
-**Failover is automatic:** `claude-sonnet` tries CLIProxyAPI first → if rate-limited, falls back to `copilot/claude-sonnet` → then to local LM Studio. You always use the same model name.
+**Failover is automatic:** `claude-sonnet` tries Copilot Enterprise first → if rate-limited or unavailable, falls back to Anthropic OAuth (via CLIProxyAPI) → then to local LM Studio. You always use the same model name.
 
 ## Why
 
@@ -209,17 +209,17 @@ API Key:   <your LITELLM_MASTER_KEY>
 }
 ```
 
-This routes all Claude Code requests through LiteLLM → CLIProxyAPI → Anthropic OAuth. No direct API key needed.
+This routes all Claude Code requests through LiteLLM → Copilot Enterprise (primary) → Anthropic OAuth fallback. No direct API key needed.
 
 ## Model reference
 
-### Anthropic Claude (via CLIProxyAPI OAuth — auto-failover to Copilot)
+### Anthropic Claude (Copilot Enterprise primary — Anthropic OAuth fallback)
 
-| Model name | Routes to | Fallback |
-|---|---|---|
-| `claude-opus` | CLIProxyAPI → Anthropic | `copilot/claude-opus` → `local/devstral-24b` |
-| `claude-sonnet` | CLIProxyAPI → Anthropic | `copilot/claude-sonnet` → `local/qwen3-coder` |
-| `claude-haiku` | CLIProxyAPI → Anthropic | `copilot/claude-haiku` → `local/llama-3.1-8b` |
+| Model name | Primary | Fallback 1 | Fallback 2 |
+|---|---|---|---|
+| `claude-opus` | Copilot Enterprise | `claude-opus-oauth` (CLIProxyAPI) | `local/devstral-24b` |
+| `claude-sonnet` | Copilot Enterprise | `claude-sonnet-oauth` (CLIProxyAPI) | `local/qwen3-coder` |
+| `claude-haiku` | Copilot Enterprise | `claude-haiku-oauth` (CLIProxyAPI) | `local/llama-3.1-8b` |
 
 ### Google Gemini (via CLIProxyAPI OAuth)
 
@@ -316,4 +316,10 @@ For LiteLLM: check [release notes](https://github.com/BerriAI/litellm/releases) 
 ## Related tools
 
 - **[HolyClaude](https://github.com/CoderLuii/HolyClaude)** — enhanced Claude Code workstation, runs as a companion container alongside this stack. Pre-configured to route through LiteLLM and use Docker MCP. See `docker-compose.holyclaude.yml`.
-- **[Docker MCP Toolkit](https://docs.docker.com/ai/mcp-catalog-and-toolkit/)** — Docker Desktop's MCP server catalog. Both host Claude Code and HolyClaude use this. Open WebUI MCP integration (requires HTTP/SSE bridge) is tracked in `ROADMAP.md`.
+- **[Docker MCP Toolkit](https://docs.docker.com/ai/mcp-catalog-and-toolkit/)** — Docker Desktop's MCP server catalog. Both host Claude Code and HolyClaude use this.
+
+## Future goals
+
+- **LiteLLM MCP support** — LiteLLM has a [built-in MCP server](https://docs.litellm.ai/docs/mcp) that exposes all your model routes as MCP tools. The intent is to wire this in so any MCP-aware client (Claude Code, Open WebUI, HolyClaude) can discover and call models via the MCP protocol rather than hand-configuring base URLs.
+- **Open WebUI MCP** — Open WebUI supports MCP via HTTP/SSE. Docker MCP (`docker mcp gateway run`) is stdio-based; bridging the two requires a sidecar like `supergateway`. Tracked for a future session.
+- **Copilot token auto-refresh** — automate `gh auth refresh && gh auth token` → restart litellm on a schedule so tokens never expire silently.
