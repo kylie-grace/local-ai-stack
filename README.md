@@ -195,16 +195,21 @@ HolyClaude is pre-configured to:
 
 Your workspace files are in `holyclaude/workspace/` on the host — accessible from both the HolyClaude UI and directly on your Mac.
 
-**One-time setup inside HolyClaude:**
+**One-time setup inside HolyClaude** (run in the HolyClaude terminal at http://localhost:3001 — all persist in the `holy-claude-home` volume):
 
 ```bash
-# Task management (run once inside the HolyClaude terminal — persists in the home volume)
+# Task management
 npm install -g task-master-ai
+
+# Gemini CLI authentication — opens a Google OAuth flow (URL + code, no browser redirect needed)
+gemini auth
 ```
 
-**SearXNG in HolyClaude:** Available at `http://host.docker.internal:8080`. Configure as a web search URL in any tool or MCP server that supports it.
+> **Gemini note:** HolyClaude's Gemini integration uses the native Gemini CLI (`~/.gemini/`), not the OpenAI-compatible LiteLLM endpoint. `gemini auth` must be run once to complete Google OAuth inside the container. The CLIProxyAPI Gemini OAuth session is a separate credential — HolyClaude's Gemini talks directly to Google.
 
-**Cursor login:** HolyClaude supports Cursor-style login — add your credentials manually in the HolyClaude settings UI.
+**Cursor login:** HolyClaude supports Cursor — add credentials in the HolyClaude settings UI.
+
+**SearXNG in HolyClaude:** Available at `http://host.docker.internal:8080` from within the container.
 
 > **Docker MCP note:** Both your host Claude Code and HolyClaude use Docker Desktop's MCP toolkit (`docker mcp gateway run`). This is configured in Claude Code's `~/.claude.json` on the host, and in `holyclaude/claude.json` which is mounted into the container. If you add new MCP servers to your host config, mirror them in `holyclaude/claude.json`.
 
@@ -436,6 +441,8 @@ docker image prune -f    # dangling images
 docker builder prune -f  # build cache
 # docker volume prune -f  # ⚠️ check first — will destroy data if not careful
 ```
+
+**Automated prevention:** A macOS `launchd` job (`com.local-ai.docker-prune`) runs `docker image prune -f` and `docker container prune -f` daily at 3am. Log at `/tmp/docker-prune.log`. The plist is at `~/Library/LaunchAgents/com.local-ai.docker-prune.plist` — not in this repo (host-specific).
 
 > See `copilot-repairs.md` for the full incident log from 2026-04-04 when this took the stack down.
 

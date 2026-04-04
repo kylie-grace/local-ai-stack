@@ -38,9 +38,11 @@ Track what's done, what's in progress, and what's coming next.
 - [x] Container name `holy-claude`, web UI at `localhost:3001`
 - [x] Routed through LiteLLM via `ANTHROPIC_BASE_URL=http://host.docker.internal:4000`
 - [x] Docker MCP pre-configured via `holyclaude/claude.json` mount
-- [x] Gemini + all LiteLLM routes available via `OPENAI_API_BASE_URL=http://host.docker.internal:4000/v1`
-- [x] `task-master-ai` documented as a one-time `npm install -g` inside the container
-- [x] Cursor login noted as manual setup in HolyClaude UI
+- [x] `OPENAI_API_BASE_URL` + `OPENAI_API_KEY` added to compose — all LiteLLM routes (Gemini, Copilot, local) accessible by model name
+- [x] `task-master-ai@0.43.1` installed globally in container (persists in home volume)
+- [x] Cursor login documented as manual UI setup
+- [x] Gemini CLI auth documented (`gemini auth` in HolyClaude terminal — separate from CLIProxyAPI OAuth)
+- [ ] `gemini auth` not yet run — user needs to complete Google OAuth inside HolyClaude terminal
 
 ### SearXNG
 - [x] SearXNG private metasearch at `localhost:8080` — added to main `docker-compose.yml`
@@ -63,7 +65,13 @@ Track what's done, what's in progress, and what's coming next.
 
 ## 📋 Backlog
 
-### OpenUsage — Anthropic usage visibility
+### OpenUsage custom plugin (next up)
+Fork `plugins/claude/plugin.js` in [openusage](https://github.com/robinebers/openusage) to read from `~/.local-ai/anthropic-token.json` instead of `~/.claude/.credentials.json`. A `launchd` agent syncs the token from the `cli-proxy-api` Docker container to that path every 15 minutes. Build openusage locally from source. See README "OpenUsage compatibility" for full constraint explanation.
+
+### Openwork (after openusage)
+[openwork](https://github.com/different-ai/openwork) — OpenCode-related, may work with this stack. Evaluate after the openusage fork is complete.
+
+### OpenUsage — Anthropic usage visibility (archived detail)
 openusage reads `~/.claude/.credentials.json` for the OAuth token. Claude Code also reads that file on startup and uses it to bypass the proxy — so we can't keep credentials there permanently.
 
 **Planned fix:** Fork `plugins/claude/plugin.js` in openusage to read from `~/.local-ai/anthropic-token.json` instead. A `launchd` agent syncs the token from the `cli-proxy-api` Docker container to that custom path every 15 minutes. Requires building openusage locally.
