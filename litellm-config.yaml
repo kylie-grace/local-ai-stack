@@ -167,19 +167,12 @@ model_list:
       extra_headers:
         Copilot-Integration-Id: vscode-chat
 
-  # ── LM Studio (local, OpenAI-compatible, JIT wildcard) ─────────────────────
+  # ── LM Studio (local, OpenAI-compatible) ──────────────────────────────────
   # LM Studio must be running with server enabled: Settings → Server → Start
-  # Wildcard: any model_name starting with "lm-studio/" forwards verbatim to LM Studio.
-  # Named local/* aliases below for easy access from Open WebUI / scripts.
-  # To verify exact model IDs: curl http://localhost:1234/v1/models
-
-  - model_name: "lm-studio/*"
-    litellm_params:
-      model: "openai/*"
-      api_base: http://host.docker.internal:1234/v1
-      api_key: lm-studio
-
   # Named local/* aliases — IDs verified from http://localhost:1234/v1/models
+  # To verify exact model IDs: curl http://localhost:1234/v1/models
+  # Note: models show "unhealthy" in the dashboard when not loaded — this is expected.
+  # Load the model in LM Studio and the health check will turn green automatically.
   - model_name: local/qwen3-coder
     litellm_params:
       model: openai/qwen/qwen3-coder-30b

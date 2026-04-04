@@ -128,15 +128,22 @@ gh auth token    # copy new value into .env COPILOT_TOKEN
 docker compose restart litellm
 ```
 
-### 6. LM Studio (local models)
+### 6. Local models (LM Studio or Ollama)
 
-LM Studio must be running **with its server enabled** for local models to work.
+Local model inference is optional. The stack routes `local/*` model names to whatever OpenAI-compatible server you run on port 1234. [Ollama](https://ollama.com) is a great choice — it's simpler to set up, has one-command model installs (`ollama pull llama3`), and runs well on Apple Silicon. [LM Studio](https://lmstudio.ai) is another solid option with a GUI for browsing and loading models.
 
-1. Open LM Studio → Settings → Server → Start server
-2. Default port: 1234 (matches the config)
-3. Verify: `curl http://localhost:1234/v1/models` — lists available model IDs
+**LM Studio:**
+1. Open LM Studio → Settings → Server → Start server (default port: 1234)
+2. Verify: `curl http://localhost:1234/v1/models`
 
-The `lm-studio/*` wildcard in the config JIT-loads any model. Named `local/*` aliases are pre-configured for the 9 models visible in your LM Studio library. If an alias fails, verify the exact model ID from the above curl and update `litellm-config.yaml`.
+**Ollama:**
+1. `brew install ollama && ollama serve`
+2. `ollama pull <model>` for each model you want available
+3. Ollama serves on port 11434 by default — update `api_base` in `litellm-config.yaml` to `http://host.docker.internal:11434/v1`
+
+Named `local/*` aliases are pre-configured for 9 models. If an alias fails, verify the exact model ID from the models endpoint and update `litellm-config.yaml`.
+
+> **Health dashboard note:** `local/*` models will show **unhealthy** in the LiteLLM dashboard when they aren't loaded. This is expected — load the model in LM Studio (or pull it in Ollama) and the health check turns green automatically. The `local/deepseek-r1-7b` entry will be healthy if that model is loaded, and so on for each one.
 
 ### 7. Open WebUI (browser chat)
 
@@ -223,20 +230,16 @@ This routes all Claude Code requests through LiteLLM → CLIProxyAPI → Anthrop
 
 ### GitHub Copilot Enterprise (OAuth via gh CLI)
 
-| Model name | Underlying model |
-|---|---|
-| `copilot/claude-opus` | claude-opus-4.6 |
-| `copilot/claude-sonnet` | claude-sonnet-4.6 |
-| `copilot/claude-opus-4.5` | claude-opus-4.5 |
-| `copilot/claude-sonnet-4.5` | claude-sonnet-4.5 |
-| `copilot/claude-haiku` | claude-haiku-4.5 |
-| `copilot/gpt-5` | gpt-5.4 |
-| `copilot/gpt-5-mini` | gpt-5-mini |
-| `copilot/gpt-5.1` | gpt-5.1 |
-| `copilot/gpt-5.2` | gpt-5.2 |
-| `copilot/gpt-5.2-codex` | gpt-5.2-codex |
-| `copilot/gpt-5.3-codex` | gpt-5.3-codex |
-| `copilot/gpt-4.1` | gpt-4.1 |
+Only models confirmed accessible via the Copilot REST API are listed. Models that appear in the Copilot UI but return 403 via the API are excluded.
+
+| Model name | Underlying model | Notes |
+|---|---|---|
+| `copilot/claude-opus` | claude-opus-4.6 | |
+| `copilot/claude-sonnet` | claude-sonnet-4.6 | |
+| `copilot/claude-haiku` | claude-haiku-4.5 | |
+| `copilot/gpt-5` | gpt-5.4 | |
+| `copilot/gpt-5.2-codex` | gpt-5.2-codex | Health check shows red (Codex requires max_tokens ≥ 16; works for real requests) |
+| `copilot/gpt-5.3-codex` | gpt-5.3-codex | Health check shows red (same reason) |
 
 ### GitHub Models (free tier — classic PAT)
 
