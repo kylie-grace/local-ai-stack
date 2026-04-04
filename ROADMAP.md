@@ -97,11 +97,11 @@ curl http://localhost:1234/v1/models
 ```
 Compare against the `local/*` entries in `litellm-config.yaml`. Update any that don't match.
 
-### Git repo publishing
-Clean up for GitHub as a public blueprint:
-- Verify no secrets in git history
-- Add a license
-- Tag v1.0
+### ✅ Git repo publishing
+- Secrets audit complete — no keys in git history, `.env` gitignored, `.env.example` placeholders only
+- `cliproxyapi/config.yaml` marked `skip-worktree`
+- License: add MIT before final public release
+- Tag v1.0 before announcing
 
 ---
 

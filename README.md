@@ -491,35 +491,57 @@ LiteLLM logs every request to Postgres with token counts (prompt, completion, ca
 
 ### OpenUsage compatibility
 
-[openusage](https://github.com/robinebers/openusage) is a macOS menu bar app that tracks usage across AI providers. Its Claude plugin reads `~/.claude/.credentials.json` for the OAuth token, which conflicts with the LiteLLM proxy (Claude Code also reads that file on startup and uses it to bypass the proxy).
+[openusage](https://github.com/robinebers/openusage) is a macOS menu bar app showing usage across AI providers. Getting it to display Anthropic usage with this proxy stack required a fork — here's the full story.
 
-**Solution:** A [patched fork](https://github.com/kylie-grace/openusage) reads from `~/.local-ai/anthropic-token.json` instead, with the macOS keychain fallback disabled. A `launchd` agent (`com.local-ai.sync-anthropic-token`) syncs the token from the CLIProxyAPI Docker container to that path every 15 minutes — no conflict with Claude Code, no manual steps.
+**The conflict:** The upstream Claude plugin reads `~/.claude/.credentials.json` for the Anthropic OAuth token. Claude Code CLI *also* reads that exact file on startup. If the file exists, Claude Code uses the OAuth session directly and ignores `ANTHROPIC_BASE_URL` — bypassing LiteLLM entirely. This is why `/logout` is required when using the proxy. You cannot keep credentials in that file permanently.
 
-**Setup (one-time after building the fork):**
+**The fix:** A [patched fork](https://github.com/kylie-grace/openusage) changes the credential path to `~/.local-ai/anthropic-token.json` — a path Claude Code never reads. The macOS keychain fallback is also disabled (same conflict risk). A `launchd` agent keeps the file fresh automatically.
+
+**What the patch changes in `plugins/claude/plugin.js`:**
+```js
+// Upstream (conflicts with proxy):
+const CRED_FILE = "~/.claude/.credentials.json"
+
+// Patched fork (safe — Claude Code never reads this path):
+const CRED_FILE = "~/.local-ai/anthropic-token.json"
+```
+That is the only functional change. The token format, refresh logic, and usage API calls are identical to upstream.
+
+**Token format written by `scripts/sync-anthropic-token.sh`:**
+```json
+{"claudeAiOauth":{"accessToken":"sk-ant-oat01-...","refreshToken":"sk-ant-ort01-...","expiresAt":1234567890000}}
+```
+CLIProxyAPI stores tokens differently (`access_token`, `refresh_token`, `expired` ISO8601). The sync script converts between the two formats.
+
+**Setup (one-time):**
 
 ```bash
-# 1. Build the patched fork (requires bun + Rust)
-cd ~/dev\ env/openusage
-source ~/.cargo/env && export PATH="$HOME/.bun/bin:$PATH"
-bun install && bun run bundle:plugins
-bun run tauri build
+# 1. Build the patched fork (bun + Rust required — install once)
+curl -fsSL https://bun.sh/install | bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source ~/.cargo/env
 
-# 2. Install the built app
+git clone https://github.com/kylie-grace/openusage.git ~/dev\ env/openusage
+cd ~/dev\ env/openusage
+bun install && bun run bundle:plugins && bun run tauri build
+
+# 2. Install
 cp -r src-tauri/target/release/bundle/macos/OpenUsage.app /Applications/
 
-# 3. The launchd agent is already loaded (com.local-ai.sync-anthropic-token)
-# Verify it's working:
-cat /tmp/sync-anthropic-token.log
+# 3. Load the launchd sync agent (already in ~/Library/LaunchAgents/ from stack setup)
+launchctl load ~/Library/LaunchAgents/com.local-ai.sync-anthropic-token.plist
+
+# 4. Open the app
+open /Applications/OpenUsage.app
 ```
 
-The token syncs automatically every 15 minutes. Log at `/tmp/sync-anthropic-token.log`.
+**Ongoing maintenance:**
+- Token syncs automatically every 15 min. Log: `/tmp/sync-anthropic-token.log`
+- Manual sync: `~/dev\ env/local-ai/scripts/sync-anthropic-token.sh`
+- If the launchd agent isn't loaded after a reboot: `launchctl load ~/Library/LaunchAgents/com.local-ai.sync-anthropic-token.plist`
+- To rebuild after changes to the fork: `cd ~/dev\ env/openusage && bun run bundle:plugins && bun run tauri build`
 
-**Manual sync:**
-```bash
-~/dev\ env/local-ai/scripts/sync-anthropic-token.sh
-```
-
-> **What changed in the fork:** `plugins/claude/plugin.js` line 2: `CRED_FILE` changed from `~/.claude/.credentials.json` to `~/.local-ai/anthropic-token.json`. Keychain fallback disabled. Auto-updater disabled (personal local build). Fork: https://github.com/kylie-grace/openusage
+> **Why not just use LiteLLM's usage UI?** You can — `http://localhost:4000/ui` → Usage tab shows token counts per model. But openusage also shows Copilot, Cursor, and Codex usage in one panel, which LiteLLM doesn't have visibility into.
 
 ## Future goals
 
