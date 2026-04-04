@@ -1,6 +1,6 @@
-# local-ai
+# my local ai dev stack
 
-A fully local, security-hardened AI proxy stack that gives you a **single OpenAI-compatible endpoint** routing to every model you have access to — enterprise, cloud, and local — from one interface, with a unified browser-based chat UI on top.
+A fully local, security-hardened AI proxy stack that gives you a **single OpenAI-compatible endpoint** routing to every model you have access to — enterprise, cloud, and local — from one interface, with a unified browser-based chat UI on top. This is what I use day to day. Sharing in the hopes it might be useful to others. 
 
 ## What it does
 
