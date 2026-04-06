@@ -7,17 +7,24 @@ A fully local, security-hardened AI proxy stack that gives you a **single OpenAI
 Instead of configuring every tool (IDE extensions, Claude Code, scripts) with separate API keys and base URLs for each provider, you point them all at `http://localhost:4000`. The stack routes requests to the right backend automatically, with transparent failover between providers.
 
 ```
-Your tools  →  LiteLLM :4000  →  GitHub Models (free tier, PAT)
-                               →  GitHub Copilot Enterprise (OAuth via gh CLI)
-                               →  Anthropic Claude (OAuth via CLIProxyAPI)
-                               →  Google Gemini (OAuth via CLIProxyAPI)
-                               →  LM Studio / Ollama :1234 (local models)
+   callers                                                            providers
+   ───────              ─────────────────────────                     ─────────
 
-Open WebUI :3000  →  LiteLLM :4000  →  all of the above (browser chat UI)
-                →  SearXNG :8080    →  web search (enabled in Open WebUI settings)
+   Claude Code  ──┐     ┌───────────────────────┐     ┌──  CLIProxyAPI :8317
+   Open WebUI   ──┼────►│     LiteLLM :4000     │─────┤      ├─ Claude OAuth ──► Anthropic API
+   HolyClaude   ──┤     │                       │     │      └─ Gemini OAuth ──► Google API
+   IDE / SDK    ──┘     │  unified OpenAI-compat │     ├──  Copilot Enterprise ──► api.githubcopilot.com
+                         │  proxy + failover +   │     ├──  GitHub Models (PAT) ──► models.github.com
+                         │  usage logging        │     └──  LM Studio / Ollama  ──► localhost:1234
+                         └──────────┬────────────┘
+                                PostgreSQL :5432
+                                (usage + virtual keys)
 
-HolyClaude :3001  →  LiteLLM :4000  →  all of the above (Claude Code workstation)
-                  →  SearXNG :8080  →  web search (via host.docker.internal)
+   web search  ──────────────────────────────────────  SearXNG :8080  ──►  internet
+   (Open WebUI / HolyClaude)
+
+   claude-* failover order:
+   CLIProxyAPI OAuth ──[rate limit]──► Copilot Enterprise ──[quota]──► LM Studio / Ollama
 ```
 
 **Failover is automatic:** `claude-sonnet` tries Anthropic OAuth (via CLIProxyAPI) first → if rate-limited, falls back to Copilot Enterprise (monthly quota) → then to local LM Studio. You always use the same model name.

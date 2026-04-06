@@ -1,11 +1,17 @@
 # SearXNG configuration for local-ai stack
 # Inherits all defaults; only overrides what we need.
+#
+# Setup: cp searxng/settings.yml.example searxng/settings.yml
+#        then replace REPLACE_WITH_OPENSSL_RAND_HEX_32 with:
+#        openssl rand -hex 32
+#
+# settings.yml is gitignored — do not commit it (contains secret_key).
 use_default_settings: true
 
 server:
   # Generated with: openssl rand -hex 32
   # This is a local-only instance — secret just prevents CSRF, not a user-facing secret.
-  secret_key: "6f34d993e68bf53821ef682abeb5f2699420256d0e518715b4bd5874c74d18d3"
+  secret_key: "REPLACE_WITH_OPENSSL_RAND_HEX_32"
   limiter: false          # No rate limiting — localhost only, single user
   public_instance: false
   image_proxy: false      # Don't proxy images — not needed for AI search use

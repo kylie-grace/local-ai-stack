@@ -8,6 +8,8 @@ cliproxyapi/auths/
 holyclaude/workspace/
 
 # SearXNG — limiter DB is auto-generated at runtime, not config
+# settings.yml contains secret_key — gitignored, use settings.yml.example as template
+searxng/settings.yml
 searxng/limiter.toml
 searxng/favicons.db
 
