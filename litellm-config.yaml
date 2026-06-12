@@ -46,6 +46,42 @@ model_list:
       input_cost_per_token: 0.000001    # $1.00/1M
       output_cost_per_token: 0.000005   # $5.00/1M
 
+  # ── Claude Code passthrough aliases ──────────────────────────────────────
+  # Bare Anthropic model IDs — matches what Claude Code sends when
+  # ANTHROPIC_BASE_URL=http://localhost:4000 is set in ~/.claude/settings.json.
+  # Uses UMGPT_CLAUDE_CODE_KEY so Claude Code spend is tracked separately.
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/claude-sonnet-4-6
+      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/claude-opus-4-7
+      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: openai/claude-opus-4-6
+      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: openai/claude-haiku-4-5
+      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000005
+
   # ── UM GPT Toolkit — OpenAI GPT-5 family ──────────────────────────────────
   - model_name: umgpt/gpt-5
     litellm_params:
