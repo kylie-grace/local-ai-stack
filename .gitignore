@@ -18,6 +18,8 @@ searxng/settings.yml.new
 *.db
 *.log
 *.pid
+__pycache__/
+*.pyc
 
 # macOS metadata
 .DS_Store

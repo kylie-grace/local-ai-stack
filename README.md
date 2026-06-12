@@ -126,7 +126,16 @@ tail /tmp/mcp-gateway.log
 
 #### Quota Shim
 
-Translates Codexbar's `GET /v1/quota-stats` requests into LiteLLM's `/key/info` endpoint, giving Codexbar real-time spend data from your virtual keys.
+Translates Codexbar's `GET /v1/quota-stats` requests into LiteLLM's `/key/info` (+ `/spend/logs`) endpoints, giving Codexbar real-time spend, request, and token counts from your virtual keys.
+
+> **Schema compatibility (important):** CodexBar's `llmproxy` provider decodes a
+> specific JSON shape, defined in
+> [`Sources/CodexBarCore/Providers/LLMProxy/LLMProxyUsageFetcher.swift`](https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/LLMProxy/LLMProxyUsageFetcher.swift).
+> As of **CodexBar 0.34.0** all keys are **snake_case** and there is no top-level budget
+> field — the "% used" bar is derived from `providers.<name>.quota_groups[].remaining_percent`.
+> `scripts/quota-shim.py` emits exactly this shape (`total_requests`, `tokens.{input_cached,
+> input_uncached,output}`, `approx_cost`, `quota_groups`, and a `summary`). If a CodexBar
+> update makes the tabs read zero again, re-check that Swift file — the field names likely changed.
 
 ```bash
 cp com.local-ai.quota-shim.plist ~/Library/LaunchAgents/
@@ -135,6 +144,9 @@ launchctl load ~/Library/LaunchAgents/com.local-ai.quota-shim.plist
 # Verify it's running
 launchctl list com.local-ai.quota-shim
 tail /tmp/quota-shim.log
+
+# Reload after editing the script
+launchctl kickstart -k gui/$(id -u)/com.local-ai.quota-shim
 
 # Test a virtual key (replace with your actual key)
 curl -s -H "Authorization: Bearer <your-virtual-key>" http://localhost:4001/v1/quota-stats

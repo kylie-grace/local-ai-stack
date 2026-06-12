@@ -35,8 +35,8 @@
 ### Data & Tracking
 - [x] 67 Claude conversations imported into Open WebUI (tagged `imported-claude`)
 - [x] LiteLLM virtual budget keys created:
-  - `umgpt-monthly` (`sk-3xnP163zF8F1PiG-0PlzKg`) — $250/mo limit
-  - `claude-code-tracking` (`sk-eQim-wdtWtYfnyRppSWbLA`) — $100/mo limit (for Phase 13)
+  - `umgpt-monthly` — $250/mo limit (key stored locally; not committed)
+  - `claude-code-tracking` — $100/mo limit, for Phase 13 (key stored locally; not committed)
 - [x] Codexbar quota-shim running as launchd service (com.local-ai.quota-shim, port 4001)
   - Translates Codexbar's `GET /v1/quota-stats` → LiteLLM `/key/info` + `/spend/logs`
   - Returns spend, token counts (input/output/total), and reset date in Codexbar's expected format
@@ -55,7 +55,7 @@
 - [x] Image generation: enabled, engine `openai`, model `umgpt/gpt-image-2` via LiteLLM
 - [x] Default model: `umgpt/claude-sonnet-4-6`
 - [x] API keys enabled (`ENABLE_API_KEYS=true` — plural — in docker-compose.yml)
-  - Pre-created key: `sk-webui-7b3ad505b4be6159ab5e8f110e6bcf22e36a897ff4a5d0a1`
+  - Pre-created key stored locally (not committed)
 - [x] gmail-mcp added to `~/.docker/mcp/registry.yaml`
 
 ---
@@ -71,19 +71,41 @@ Open http://localhost:3000 → Admin panel:
 
 ---
 
-## 🔲 Phase 13 — Claude Code Routing (Session-Break)
+## ✅ Phase 13 — Claude Code Routing (Session-Break)
 
-> Do at end of a session. Routes Claude Code → LiteLLM → UM GPT Toolkit for spend tracking.
+> Routes Claude Code → LiteLLM → UM GPT Toolkit for spend tracking under the
+> `claude-code-tracking` virtual key. Config is in place; activate by editing
+> `~/.claude/settings.json` (takes effect on the NEXT Claude Code session).
 
-1. Add Claude Code model aliases to `litellm-config.yaml` (see PLAN.md Phase 13)
-2. Add `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES: "true"` to litellm service in docker-compose.yml
-3. `docker compose restart litellm`
-4. Update `~/.claude/settings.json`:
-   ```json
-   { "env": { "ANTHROPIC_BASE_URL": "http://localhost:4000", "ANTHROPIC_API_KEY": "sk-eQim-wdtWtYfnyRppSWbLA" } }
+**Key insight:** UM GPT serves a **native Anthropic `/v1/messages` endpoint**, so the
+Claude Code aliases use the `anthropic/` provider for clean passthrough — NOT `openai/`.
+The earlier `openai/` approach forced an Anthropic→OpenAI→Anthropic conversion that
+double-emitted `message_start` on streams and broke Claude Code's SSE parser. Do **not**
+set `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES` — that forces the broken path.
+
+1. Claude Code aliases in `litellm-config.yaml` use `anthropic/<model>` + `api_base`
+   `https://api.toolkit.umgpt.umich.edu` (no `/v1`). UM GPT/Portkey requires
+   `Authorization: Bearer`, so each alias sets `extra_headers.Authorization` to
+   `os.environ/UMGPT_CLAUDE_CODE_AUTH` (the full `Bearer <key>` string lives in `.env`).
+2. Ensure `UMGPT_CLAUDE_CODE_AUTH=Bearer <key>` is in `.env`, then **recreate** (not just
+   restart) LiteLLM so the new env var loads: `docker compose up -d litellm`.
+3. Verify through LiteLLM (streaming must show exactly ONE `message_start`):
+   ```bash
+   curl -sN http://localhost:4000/v1/messages \
+     -H "x-api-key: <claude-code-tracking key>" \
+     -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
+     -d '{"model":"claude-sonnet-4-6","max_tokens":15,"stream":true,
+          "messages":[{"role":"user","content":"hi"}]}' | grep '^event:'
    ```
-5. Test with curl (see PLAN.md Phase 13 Step 5)
-6. Rollback: remove both env vars from `~/.claude/settings.json`
+4. Cut over `~/.claude/settings.json` (use the `claude-code-tracking` virtual key, not
+   the UMGPT key):
+   ```json
+   { "env": { "ANTHROPIC_BASE_URL": "http://localhost:4000",
+              "ANTHROPIC_AUTH_TOKEN": "<claude-code-tracking virtual key>" } }
+   ```
+5. Confirm spend lands on the key: `GET http://localhost:4000/key/info?key=<key>` (master auth).
+6. Rollback: restore `ANTHROPIC_BASE_URL=https://api.toolkit.umgpt.umich.edu` and the
+   UMGPT key in `~/.claude/settings.json` — Claude Code goes back to hitting UM GPT directly.
 
 ---
 

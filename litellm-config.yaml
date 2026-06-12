@@ -50,35 +50,54 @@ model_list:
   # Bare Anthropic model IDs — matches what Claude Code sends when
   # ANTHROPIC_BASE_URL=http://localhost:4000 is set in ~/.claude/settings.json.
   # Uses UMGPT_CLAUDE_CODE_KEY so Claude Code spend is tracked separately.
+  #
+  # provider = anthropic/ (NOT openai/): UM GPT serves a NATIVE Anthropic
+  # /v1/messages endpoint, so LiteLLM passes the Anthropic format straight
+  # through instead of converting to OpenAI chat-completions and back. The
+  # round-trip conversion (openai/ provider) double-emitted message_start on
+  # streams, which broke Claude Code's SSE parser. The anthropic/ provider
+  # appends /v1/messages itself, so api_base has NO /v1 suffix.
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: openai/claude-sonnet-4-6
-      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      model: anthropic/claude-sonnet-4-6
+      api_base: https://api.toolkit.umgpt.umich.edu
       api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      # UM GPT (Portkey) requires Authorization: Bearer, not the x-api-key
+      # header the anthropic/ provider sends by default. LiteLLM only resolves
+      # os.environ/ when the WHOLE value is one reference, so the "Bearer "
+      # prefix is baked into UMGPT_CLAUDE_CODE_AUTH in .env.
+      extra_headers:
+        Authorization: os.environ/UMGPT_CLAUDE_CODE_AUTH
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
 
   - model_name: claude-opus-4-7
     litellm_params:
-      model: openai/claude-opus-4-7
-      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      model: anthropic/claude-opus-4-7
+      api_base: https://api.toolkit.umgpt.umich.edu
       api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      extra_headers:
+        Authorization: os.environ/UMGPT_CLAUDE_CODE_AUTH
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
 
   - model_name: claude-opus-4-6
     litellm_params:
-      model: openai/claude-opus-4-6
-      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      model: anthropic/claude-opus-4-6
+      api_base: https://api.toolkit.umgpt.umich.edu
       api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      extra_headers:
+        Authorization: os.environ/UMGPT_CLAUDE_CODE_AUTH
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
 
   - model_name: claude-haiku-4-5
     litellm_params:
-      model: openai/claude-haiku-4-5
-      api_base: https://api.toolkit.umgpt.umich.edu/v1
+      model: anthropic/claude-haiku-4-5
+      api_base: https://api.toolkit.umgpt.umich.edu
       api_key: os.environ/UMGPT_CLAUDE_CODE_KEY
+      extra_headers:
+        Authorization: os.environ/UMGPT_CLAUDE_CODE_AUTH
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000005
 

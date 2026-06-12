@@ -83,36 +83,48 @@ class Handler(BaseHTTPRequestHandler):
             print(f"[quota-shim] spend/logs error (non-fatal): {exc}", file=sys.stderr, flush=True)
 
         reset_at = next_month_first(now)
-        cost_nanos = int(spend * 1_000_000_000)
+
+        # Schema must match CodexBar's LLMProxyQuotaStatsResponse decoder
+        # (Sources/CodexBarCore/Providers/LLMProxy/LLMProxyUsageFetcher.swift).
+        # ALL keys are snake_case. CodexBar derives:
+        #   - tokens shown  = input_cached + input_uncached + output  (per provider)
+        #   - requests      = summary.total_requests (else sum of providers)
+        #   - tokens total  = summary.total_tokens   (else sum of providers)
+        #   - cost          = summary.approx_cost    (else sum of providers)
+        #   - "% used" bar  = derived from quota_groups[].remaining_percent
+        # There is no top-level budget field in this version; the budget bar is
+        # driven entirely by quota_groups.remaining_percent, so we compute it.
+        remaining_percent = (
+            round(max(0.0, budget - spend) / budget * 100.0, 4) if budget > 0 else None
+        )
+        quota_groups = []
+        if remaining_percent is not None:
+            quota_groups = [{
+                "name": alias,
+                "remaining_percent": remaining_percent,
+                "reset_time": reset_at,
+            }]
+
         body = json.dumps({
-            # Core quota fields (LLMProxyQuotaStatsResponse top level)
-            "planName": alias,
-            "usedQuota": round(spend, 6),
-            "totalQuota": budget,
-            "remainingQuota": round(max(0.0, budget - spend), 6),
-            "resetsAt": reset_at,
-            "updatedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "kind": "credits",
-            # providers: [String: ProviderStats] — required by Codexbar decoder
             "providers": {
                 "litellm": {
+                    "credential_count": 1,
+                    "active_count": 1,
+                    "exhausted_count": 0,
+                    "total_requests": req_count,
                     "tokens": {
-                        "totalTokens": tokens_total,
-                        "inputTokens": tokens_in,
-                        "outputTokens": tokens_out,
+                        "input_cached": 0,
+                        "input_uncached": tokens_in,
+                        "output": tokens_out,
                     },
-                    "activeCount": 1,
-                    "exhaustedCount": 0,
-                    "approximateCost": round(spend, 6),
-                    "quotaGroups": [],
+                    "approx_cost": round(spend, 6),
+                    "quota_groups": quota_groups,
                 }
             },
-            # summary: cost history aggregate
             "summary": {
-                "totalTokens": tokens_total,
-                "tokensIn": tokens_in,
-                "tokensOut": tokens_out,
-                "costNanos": cost_nanos,
+                "total_requests": req_count,
+                "total_tokens": tokens_total,
+                "approx_cost": round(spend, 6),
             },
         }).encode()
         self._send(200, body, "application/json")
