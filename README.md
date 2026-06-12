@@ -53,7 +53,9 @@ Images are pinned by SHA256 digest in `docker-compose.yml` so nothing changes un
 - **LM Studio** (optional) — for local model inference on port 1234
 - Python 3 installed (`/usr/bin/python3` — ships with macOS)
 
-## Setup
+## Implementation roadmap
+
+Stand the stack up in order — each step builds on the previous. Steps 5, 7, and 8 are optional add-ons (Codexbar spend display, Claude Code routing, local models).
 
 ### 1. Clone and configure
 
@@ -102,7 +104,7 @@ curl -s -X POST http://localhost:4000/key/generate \
   -d '{"key_alias":"claude-code-tracking","duration":null,"max_budget":100,"budget_duration":"monthly","models":[]}'
 ```
 
-Copy the returned `"key"` values — you'll need them for Codexbar and Phase 13.
+Copy the returned `"key"` values — you'll need them for Codexbar (step 5) and Claude Code routing (step 7).
 
 ### 4. Install the host-side launchd services
 
@@ -176,21 +178,38 @@ These are already configured in the database by default (see `scripts/update_web
 Remaining manual steps (Admin → Settings):
 - **Personalization → Memory** → Enable
 
-### 7. Wire up Claude Code (optional — Phase 13)
+### 7. Wire up Claude Code (optional)
 
 Routes Claude Code sessions through LiteLLM so spend shows up in the usage dashboard and counts against the `claude-code-tracking` budget key.
 
-Add to `~/.claude/settings.json`:
-```json
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:4000",
-    "ANTHROPIC_API_KEY": "<your claude-code-tracking virtual key>"
-  }
-}
-```
+UM GPT Toolkit serves a **native Anthropic `/v1/messages` endpoint**, so the Claude Code model aliases in `litellm-config.yaml` use the `anthropic/` provider for clean passthrough — no format conversion. Each alias sets `extra_headers.Authorization` to `os.environ/UMGPT_CLAUDE_CODE_AUTH` because UM GPT requires `Authorization: Bearer <key>` rather than the `x-api-key` header LiteLLM's `anthropic/` provider sends by default.
 
-Also requires adding `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES: "true"` to the litellm service in `docker-compose.yml` — see ROADMAP.md Phase 13.
+1. Make sure `UMGPT_CLAUDE_CODE_AUTH=Bearer <your UMGPT_CLAUDE_CODE_KEY>` is set in `.env`, then **recreate** LiteLLM so the env var loads (a plain restart won't pick it up):
+   ```bash
+   docker compose up -d litellm
+   ```
+2. Verify the stream emits exactly **one** `message_start` event (more than one means a broken conversion path):
+   ```bash
+   curl -sN http://localhost:4000/v1/messages \
+     -H "x-api-key: <claude-code-tracking key>" \
+     -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
+     -d '{"model":"claude-sonnet-4-6","max_tokens":15,"stream":true,
+          "messages":[{"role":"user","content":"hi"}]}' | grep '^event:'
+   ```
+3. Point Claude Code at LiteLLM in `~/.claude/settings.json` (use `ANTHROPIC_AUTH_TOKEN`, not `ANTHROPIC_API_KEY`, and the `claude-code-tracking` virtual key — not your UM GPT key):
+   ```json
+   {
+     "env": {
+       "ANTHROPIC_BASE_URL": "http://localhost:4000",
+       "ANTHROPIC_AUTH_TOKEN": "<your claude-code-tracking virtual key>"
+     }
+   }
+   ```
+   Takes effect on the next Claude Code session.
+4. Confirm spend lands on the key: `curl -H "Authorization: Bearer <master-key>" "http://localhost:4000/key/info?key=<claude-code-tracking key>"`.
+5. To roll back, point `ANTHROPIC_BASE_URL` back at `https://api.toolkit.umgpt.umich.edu` with your UM GPT key — Claude Code goes back to hitting UM GPT directly.
+
+> **Do not** set `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES` — it forces an Anthropic→OpenAI→Anthropic conversion that double-emits `message_start` and breaks Claude Code's SSE parser.
 
 ### 8. Local models (LM Studio — optional)
 
@@ -335,7 +354,7 @@ LiteLLM logs every request to Postgres with model, tokens (prompt/completion/cac
 
 **Virtual keys** let you set monthly budgets:
 - `umgpt-monthly` — $250/mo soft limit (general use)
-- `claude-code-tracking` — $100/mo soft limit (Claude Code sessions, Phase 13)
+- `claude-code-tracking` — $100/mo soft limit (Claude Code sessions, see step 7)
 
 When a key's budget is exceeded, LiteLLM returns `429 Budget Exceeded`. The master key has no budget limit.
 
@@ -436,24 +455,7 @@ Not yet set up. Requires:
 2. Note your `CLIENT_ID` and `CLIENT_SECRET`
 3. Configure the Docker MCP server (not yet in Docker's catalog — would run as a custom server)
 
-See ROADMAP.md for status.
-
-## Pending (Phase 13 — Claude Code Routing)
-
-Routes Claude Code → LiteLLM → UM GPT Toolkit for full spend tracking. Do at end of a working session (requires a restart):
-
-1. Add Claude model aliases to `litellm-config.yaml` (see ROADMAP.md Phase 13)
-2. Add to `docker-compose.yml` litellm service environment:
-   ```yaml
-   LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES: "true"
-   ```
-3. `docker compose up -d litellm`
-4. Add to `~/.claude/settings.json`:
-   ```json
-   { "env": { "ANTHROPIC_BASE_URL": "http://localhost:4000", "ANTHROPIC_API_KEY": "<claude-code-tracking key>" } }
-   ```
-5. Test: start a Claude Code session, then check http://localhost:4000/ui → Usage
-6. Rollback: remove both env vars from `~/.claude/settings.json`
+See the backlog in ROADMAP.md for status.
 
 ## Service URLs
 

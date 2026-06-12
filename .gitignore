@@ -1,11 +1,11 @@
 # secrets — never commit
 .env
 
-# CLIProxyAPI credential store — contains live OAuth tokens
-cliproxyapi/auths/
-
-# HolyClaude workspace — user project files, not part of this repo
-holyclaude/workspace/
+# CLIProxyAPI / HolyClaude — local-only coding-workstation experiment, not part
+# of the public stack. Files kept on disk but never committed.
+cliproxyapi/
+holyclaude/
+docker-compose.holyclaude.yml
 
 # SearXNG — limiter DB is auto-generated at runtime, not config
 # settings.yml contains secret_key — gitignored, use settings.yml.example as template
@@ -27,6 +27,7 @@ __pycache__/
 # personal/session artifacts — not for public repo
 Claude export/
 PLAN.md
+copilot-repairs.md
 
 # old CLIProxyAPI helper — references personal account info
 scripts/sync-anthropic-token.sh
