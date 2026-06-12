@@ -3,6 +3,9 @@
     "MCP_DOCKER": {
       "command": "docker",
       "args": ["mcp", "gateway", "run"]
+    },
+    "taskmaster-ai": {
+      "command": "task-master-ai"
     }
   }
 }

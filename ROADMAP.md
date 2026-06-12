@@ -1,131 +1,108 @@
-# local-ai Roadmap
+# local-ai Stack Roadmap
 
-Track what's done, what's in progress, and what's coming next.
+## ✅ Completed — June 2026 Upgrade
 
----
+### Stack
+- [x] LiteLLM updated to latest digest (main-latest, sha256:7c311546…)
+- [x] Open WebUI updated to latest digest (sha256:7f1b0a1a…)
+- [x] CLIProxyAPI removed entirely (along with OAuth volumes and ports)
+- [x] Orphan containers (holy-claude, cli-proxy-api) cleaned up
 
-## ✅ Completed
+### Model Routing
+- [x] All GitHub Models and Copilot Enterprise models removed
+- [x] All CLIProxyAPI OAuth routes removed (Claude, Gemini)
+- [x] UM GPT Toolkit added: 27 models with full per-token pricing
+  - Claude: claude-sonnet-4-6, claude-opus-4-6/4-7, claude-haiku-4-5
+  - OpenAI: gpt-4o/mini, gpt-4.1/mini/nano, gpt-5/mini/5.1/5.2/5.4/5.5
+  - Reasoning: o1, o3, o3-mini, o4-mini
+  - Image: gpt-image-1.5, gpt-image-2
+  - Embeddings: text-embedding-3-large/small
+  - Google: gemini-3-flash-preview, gemini-3.1-flash-image-preview
+  - Meta: llama-4-maverick, llama-4-scout
+- [x] LM Studio: 4 new models added (qwen3.6-35b, gemma4-31b, nomic-embed-v2, nomic-embed-v1.5)
+- [x] All 13 existing LM Studio models confirmed in config
+- [x] Embedding fallbacks: local Nomic → umgpt cloud if LM Studio is off
+- [x] Router failovers: umgpt → local for Claude, GPT-5, o3
 
-### Core stack
-- [x] LiteLLM proxy at `localhost:4000` with PostgreSQL backend
-- [x] CLIProxyAPI OAuth bridge at `localhost:8317`
-- [x] Open WebUI browser chat at `localhost:3000`
-- [x] All ports bound to `127.0.0.1` — LAN/VPN cannot reach the stack
-- [x] Images pinned by SHA256 digest — immutable
-- [x] `cap_drop: ALL` + `no-new-privileges:true` on all main stack containers
-- [x] Telemetry disabled everywhere; callbacks empty (no exfiltration)
-- [x] Version pinned to v1.83.0-nightly to avoid LiteLLM exfiltration CVE
+### Infrastructure
+- [x] Docker MCP gateway running as launchd service (auto-start on login)
+  - `com.local-ai.mcp-gateway` — Streamable HTTP (streaming) mode on port 8811
+  - Open WebUI connects via `http://mcp-proxy:8080/mcp` (nginx proxy rewrites Host header)
+  - Logs: `/tmp/mcp-gateway.log`
+- [x] .env cleaned up (removed GitHub/Copilot/CLIProxy keys, added UMGPT keys)
+- [x] .env.example updated to reflect new stack
 
-### Provider integrations
-- [x] Claude OAuth session (CLIProxyAPI) — `claude-sonnet`, `claude-opus`, `claude-haiku`
-- [x] Gemini OAuth session (CLIProxyAPI) — `gemini-flash`, `gemini-pro`
-- [x] GitHub Models free tier — `github/gpt-4o`, `github/llama-3.1-405b`, etc.
-- [x] GitHub Copilot Enterprise — full model set: Claude 4.5/4.6, GPT-5.x, codex variants
-- [x] LM Studio wildcard routing (`lm-studio/*`) + named `local/*` aliases for all 9 library models
+### Data & Tracking
+- [x] 67 Claude conversations imported into Open WebUI (tagged `imported-claude`)
+- [x] LiteLLM virtual budget keys created:
+  - `umgpt-monthly` (`sk-3xnP163zF8F1PiG-0PlzKg`) — $250/mo limit
+  - `claude-code-tracking` (`sk-eQim-wdtWtYfnyRppSWbLA`) — $100/mo limit (for Phase 13)
+- [x] Codexbar quota-shim running as launchd service (com.local-ai.quota-shim, port 4001)
+  - Translates Codexbar's `GET /v1/quota-stats` → LiteLLM `/key/info` + `/spend/logs`
+  - Returns spend, token counts (input/output/total), and reset date in Codexbar's expected format
+  - Both virtual keys confirmed working: umgpt-monthly ($250) and claude-code-tracking ($100)
+- [x] Codexbar: set Enterprise Host → `http://localhost:4001/v1`, add both virtual keys as accounts
+- [x] LiteLLM guardrails: `hide-secrets` (post-call, `default_on: true`) active in litellm-config.yaml
 
-### Routing
-- [x] Automatic failover: `claude-sonnet` → `copilot/claude-sonnet` → `local/qwen3-coder`
-- [x] Automatic failover: `claude-opus` → `copilot/claude-opus` → `local/devstral-24b`
-- [x] Automatic failover: `claude-haiku` → `copilot/claude-haiku` → `local/llama-3.1-8b`
-
-### Management
-- [x] CLIProxyAPI management UI at `http://localhost:8317/management.html`
-- [x] `MANAGEMENT_PASSWORD` env var as primary auth path for management routes
-- [x] `git update-index --skip-worktree` for CLIProxyAPI config
-
-### HolyClaude
-- [x] Separate `docker-compose.holyclaude.yml` — starts/stops independently
-- [x] Container name `holy-claude`, web UI at `localhost:3001`
-- [x] Routed through LiteLLM via `ANTHROPIC_BASE_URL=http://host.docker.internal:4000`
-- [x] Docker MCP pre-configured via `holyclaude/claude.json` mount
-- [x] `OPENAI_API_BASE_URL` + `OPENAI_API_KEY` added to compose — all LiteLLM routes (Gemini, Copilot, local) accessible by model name
-- [x] `task-master-ai@0.43.1` installed globally in container (persists in home volume)
-- [x] Cursor login documented as manual UI setup
-- [x] Native Gemini CLI tab investigated — not usable with Google Workspace (umich.edu) accounts (`RESTRICTED_DASHER_USER`). Gemini available via LiteLLM (`gemini-flash`, `gemini-pro`) through `OPENAI_API_BASE_URL` instead.
-
-### SearXNG
-- [x] SearXNG private metasearch at `localhost:8080` — added to main `docker-compose.yml`
-- [x] JSON API enabled (`formats: [html, json]`) for Open WebUI integration
-- [x] `searxng/settings.yml` and `searxng/uwsgi.ini` committed
-- [x] Wired into Open WebUI (Admin → Settings → Web Search → SearXNG → `http://searxng:8080`)
-- [x] Browser integration documented (Chrome/Brave: use `http://localhost:8080/search?q=%s` as search engine URL)
-
-### LiteLLM spend/usage tracking
-- [x] `disable_spend_logs: false` confirmed in `litellm-config.yaml`
-- [x] Token counts logging to Postgres and visible in LiteLLM admin UI (`/ui` → Usage tab)
-- [ ] Add pricing data (`input_cost_per_token` / `output_cost_per_token`) to model entries if dollar estimates are wanted
-
-### Host Claude Code wiring
-- [x] `ANTHROPIC_API_KEY` (virtual key) + `ANTHROPIC_BASE_URL=http://localhost:4000` set in `~/.claude/settings.json`
-- [x] `/logout` run in Claude Code so env vars take precedence over OAuth session
-- [x] Confirmed working: `POST /v1/messages 200 OK` in LiteLLM logs
+### Open WebUI Configuration
+- [x] MCP gateway switched to `--transport streaming` (Streamable HTTP, port 8811)
+  - Auth: `MCP_GATEWAY_AUTH_TOKEN` set in launchd plist (`com.local-ai.mcp-gateway`)
+  - Gateway URL: `http://localhost:8811/mcp` (host), `http://mcp-proxy:8080/mcp` (container)
+- [x] mcp-proxy: `nginxinc/nginx-unprivileged:alpine` on litellm-net
+  - Rewrites `Host: host.docker.internal:8811` → `Host: localhost:8811` (required by gateway)
+- [x] Tool server: `type: mcp`, URL `http://mcp-proxy:8080/mcp`, Bearer auth
+- [x] Embedding: engine `openai`, model `local/nomic-embed-v1.5` (LiteLLM), chunk 1500/100
+- [x] Image generation: enabled, engine `openai`, model `umgpt/gpt-image-2` via LiteLLM
+- [x] Default model: `umgpt/claude-sonnet-4-6`
+- [x] API keys enabled (`ENABLE_API_KEYS=true` — plural — in docker-compose.yml)
+  - Pre-created key: `sk-webui-7b3ad505b4be6159ab5e8f110e6bcf22e36a897ff4a5d0a1`
+- [x] gmail-mcp added to `~/.docker/mcp/registry.yaml`
 
 ---
 
-## 📋 Backlog
+## 🔲 Pending — One-Time UI Setup (Do in Browser)
 
-### ✅ OpenUsage — DONE
-- Fork: https://github.com/kylie-grace/openusage
-- `plugins/claude/plugin.js`: CRED_FILE → `~/.local-ai/anthropic-token.json`, keychain fallback disabled, auto-updater disabled
-- `scripts/sync-anthropic-token.sh`: converts CLIProxyAPI token format → claudeAiOauth JSON, writes to custom path
-- launchd agent `com.local-ai.sync-anthropic-token`: syncs every 15 minutes, runs at login
-- Build: `cd ~/dev\ env/openusage && bun install && bun run bundle:plugins && bun run tauri build`
-- Install: `cp -r src-tauri/target/release/bundle/macos/OpenUsage.app /Applications/`
+Open http://localhost:3000 → Admin panel:
 
-### Openwork (after openusage is confirmed working)
-[openwork](https://github.com/different-ai/openwork) — OpenCode-related, may work with this stack. Evaluate after openusage build is verified.
-
-### Open WebUI — Docker MCP integration
-Open WebUI supports MCP via HTTP/SSE endpoints. Docker MCP (`docker mcp gateway run`) is stdio-based.
-To bridge these, a sidecar like `supergateway` could wrap stdio → SSE, or check if Docker Desktop exposes an HTTP MCP gateway port.
-For now, Docker MCP is available in HolyClaude (where it's more useful for coding workflows).
-
-### Open WebUI — configure default model
-Set a default model in Open WebUI admin settings so new conversations don't require model selection.
-
-### Copilot Enterprise token refresh automation
-Currently manual: `gh auth refresh && gh auth token` → update `.env` → restart litellm.
-Could be scripted as a cron job or a small refresh helper.
-
-### Gemini via Copilot Enterprise API
-Gemini is enabled in the Copilot org settings UI but was not accessible via the `api.githubcopilot.com` REST endpoint. May become available via API in future — worth retesting periodically.
-
-### LM Studio model alias verification
-Once LM Studio server is running (`Settings → Server → Start`):
-```bash
-curl http://localhost:1234/v1/models
-```
-Compare against the `local/*` entries in `litellm-config.yaml`. Update any that don't match.
-
-### ✅ Git repo publishing
-- Secrets audit complete — no keys in git history, `.env` gitignored, `.env.example` placeholders only
-- `cliproxyapi/config.yaml` marked `skip-worktree`
-- License: add MIT before final public release
-- Tag v1.0 before announcing
+- [x] **Memory**: enabled
+- [x] **Web Search**: confirmed (SearXNG at `http://searxng:8080` configured in DB)
+- [x] **Tool server**: Docker MCP connected, 10 tools available
+- [x] **Image generation**: configured (user fixed in UI)
 
 ---
 
-## Architecture
+## 🔲 Phase 13 — Claude Code Routing (Session-Break)
 
-```
-localhost:3000  ──→  Open WebUI
-localhost:3001  ──→  HolyClaude (Claude Code workstation, separate compose)
-                          │
-localhost:4000  ──→  LiteLLM Proxy
-                          │
-                          ├──→  claude-sonnet/opus/haiku  ──→  CLIProxyAPI :8317  ──→  Anthropic OAuth
-                          │       (fallback: copilot/claude-* → local/*)
-                          │
-                          ├──→  gemini-flash/pro  ──→  CLIProxyAPI :8317  ──→  Google OAuth
-                          │
-                          ├──→  copilot/*  ──→  api.githubcopilot.com  (COPILOT_TOKEN)
-                          │
-                          ├──→  github/*  ──→  GitHub Models free tier  (GITHUB_API_KEY)
-                          │
-                          └──→  local/* / lm-studio/*  ──→  LM Studio :1234
+> Do at end of a session. Routes Claude Code → LiteLLM → UM GPT Toolkit for spend tracking.
 
-                     PostgreSQL (internal — no host port)
+1. Add Claude Code model aliases to `litellm-config.yaml` (see PLAN.md Phase 13)
+2. Add `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES: "true"` to litellm service in docker-compose.yml
+3. `docker compose restart litellm`
+4. Update `~/.claude/settings.json`:
+   ```json
+   { "env": { "ANTHROPIC_BASE_URL": "http://localhost:4000", "ANTHROPIC_API_KEY": "sk-eQim-wdtWtYfnyRppSWbLA" } }
+   ```
+5. Test with curl (see PLAN.md Phase 13 Step 5)
+6. Rollback: remove both env vars from `~/.claude/settings.json`
 
-All host ports bound to 127.0.0.1 only.
-Docker MCP available on host (Claude Code) and in HolyClaude via socket mount.
-```
+---
+
+## 🔲 Backlog
+
+- [ ] **Google Drive MCP** — needs Google Cloud OAuth app + `@modelcontextprotocol/server-gdrive` (PLAN.md Phase 5)
+- [ ] **OnlyOffice** — optional document editor with LiteLLM AI integration (PLAN.md Phase 10)
+- [ ] **Claude history re-import** — if Anthropic ever exports project conversation history
+- [ ] **LM Studio model ID sync** — verify IDs with `curl http://localhost:1234/v1/models` after loading new models
+
+---
+
+## Reference
+
+| Service | URL | Notes |
+|---|---|---|
+| LiteLLM proxy + UI | http://localhost:4000 / http://localhost:4000/ui | Login with LITELLM_MASTER_KEY |
+| Codexbar quota shim | http://localhost:4001/v1 | llmproxy enterprise host |
+| Open WebUI | http://localhost:3000 | Chat interface |
+| SearXNG | http://localhost:8080 | Private search |
+| MCP gateway | http://localhost:8811/mcp | Streamable HTTP endpoint for tools |
+| Spend dashboard | http://localhost:4000/ui → Usage | Filter by key/model/date |

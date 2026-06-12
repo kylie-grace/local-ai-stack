@@ -15,7 +15,7 @@
 services:
 
   holy-claude:
-    image: coderluii/holyclaude:latest
+    image: coderluii/holyclaude:latest@sha256:e897a524634b762ed486cfe38a49367ae60d78c11355dc59c700b7b9377f48de
     container_name: holy-claude
     restart: unless-stopped
     ports:
@@ -32,6 +32,9 @@ services:
       # Match your Mac's UID/GID so workspace files have correct ownership.
       PUID: "501"
       PGID: "20"
+      # Redirect XDG config to a user-owned path so tools like Cursor can store
+      # auth tokens without hitting the root-owned ~/.config directory.
+      XDG_CONFIG_HOME: "/home/claude/.config-user"
     volumes:
       # Persistent home directory — settings, Claude history, tool configs survive restarts.
       - holy-claude-home:/home/claude
@@ -44,6 +47,12 @@ services:
       # Security note: this gives the container full Docker control.
       # Acceptable since holy-claude is localhost-only and operator-controlled.
       - /var/run/docker.sock:/var/run/docker.sock
+      # Host project directories — accessible inside container for Claude Code projects.
+      - /Users/kpsnyder/25live-watchdog:/workspace/25live-watchdog
+      - /Users/kpsnyder/dsw-tools:/workspace/dsw-tools
+      - /Users/kpsnyder/homelab/windows-vpn-bypass-tray:/workspace/windows-vpn-bypass-tray
+      - /Users/kpsnyder/intermapper-alerts:/workspace/intermapper-alerts
+      - "/Users/kpsnyder/FastPass Bypass Extension:/workspace/fastpass-bypass-extension"
     extra_hosts:
       # Ensure host.docker.internal resolves correctly on macOS Docker Desktop.
       - "host.docker.internal:host-gateway"
